@@ -24,4 +24,8 @@ public class Client {
 
     private Instant createdAt;
     private Instant updatedAt;
+    
+    private String gstin;      // Client's Tax Number
+    private String state;      // e.g. Gujarat
+    private String stateCode;  // e.g. 24
 }

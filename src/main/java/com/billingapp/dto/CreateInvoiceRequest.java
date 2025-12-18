@@ -27,4 +27,13 @@ public class CreateInvoiceRequest {
     private Instant dueDate;
 
     private String createdBy;
+    // 👇 NEW FIELDS
+    private String billingAddress;
+    private String shippingAddress;
+    private String ewayBillNo;
+    private String transportMode;
+    private String challanNo;
+    private Instant challanDate;
+    private String poNumber;
+    private Instant poDate;
 }

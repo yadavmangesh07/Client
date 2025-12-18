@@ -14,4 +14,7 @@ public class InvoiceItemRequest {
 
     @Min(value = 0, message = "Rate must be non-negative")
     private double rate;
+    private String hsnCode;
+    private String uom;
+    private double taxRate;
 }

@@ -18,6 +18,17 @@ public class InvoiceMapper {
         dto.setId(invoice.getId());
         dto.setInvoiceNo(invoice.getInvoiceNo());
         dto.setClientId(invoice.getClientId());
+
+        // Map new fields
+        dto.setBillingAddress(invoice.getBillingAddress());
+        dto.setShippingAddress(invoice.getShippingAddress());
+        dto.setEwayBillNo(invoice.getEwayBillNo());
+        dto.setTransportMode(invoice.getTransportMode());
+        dto.setChallanNo(invoice.getChallanNo());
+        dto.setChallanDate(invoice.getChallanDate());
+        dto.setPoNumber(invoice.getPoNumber());
+        dto.setPoDate(invoice.getPoDate());
+
         dto.setItems(mapItemsToDto(invoice.getItems()));
         dto.setSubtotal(invoice.getSubtotal());
         dto.setTax(invoice.getTax());
@@ -28,6 +39,7 @@ public class InvoiceMapper {
         dto.setCreatedBy(invoice.getCreatedBy());
         dto.setCreatedAt(invoice.getCreatedAt());
         dto.setUpdatedAt(invoice.getUpdatedAt());
+        
         return dto;
     }
 
@@ -35,6 +47,17 @@ public class InvoiceMapper {
         if (req == null) return null;
         Invoice invoice = Invoice.builder()
                 .clientId(req.getClientId())
+                
+                // Map new fields
+                .billingAddress(req.getBillingAddress())
+                .shippingAddress(req.getShippingAddress())
+                .ewayBillNo(req.getEwayBillNo())
+                .transportMode(req.getTransportMode())
+                .challanNo(req.getChallanNo())
+                .challanDate(req.getChallanDate())
+                .poNumber(req.getPoNumber())
+                .poDate(req.getPoDate())
+
                 .items(mapItemsFromRequest(req.getItems()))
                 .tax(req.getTax())
                 .status(req.getStatus())
@@ -49,6 +72,10 @@ public class InvoiceMapper {
         if (items == null) return null;
         return items.stream().map(i -> Invoice.InvoiceItem.builder()
                 .description(i.getDescription())
+                // Map new item fields
+                .hsnCode(i.getHsnCode())
+                .uom(i.getUom())
+                .taxRate(i.getTaxRate())
                 .qty(i.getQty())
                 .rate(i.getRate())
                 .build()).collect(Collectors.toList());
@@ -59,6 +86,10 @@ public class InvoiceMapper {
         return items.stream().map(i -> {
             InvoiceDTO.InvoiceItemDTO dto = new InvoiceDTO.InvoiceItemDTO();
             dto.setDescription(i.getDescription());
+            // Map new item fields
+            dto.setHsnCode(i.getHsnCode());
+            dto.setUom(i.getUom());
+            dto.setTaxRate(i.getTaxRate());
             dto.setQty(i.getQty());
             dto.setRate(i.getRate());
             dto.setAmount(i.getQty() * i.getRate());

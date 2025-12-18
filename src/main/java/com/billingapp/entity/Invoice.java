@@ -30,6 +30,19 @@ public class Invoice {
     private String createdBy;
     private Instant createdAt;
     private Instant updatedAt;
+    // 👇 NEW: Address Snapshot (Stored on Invoice)
+    private String billingAddress;
+    private String shippingAddress;
+
+    // 👇 NEW: Transport Details
+    private String ewayBillNo;
+    private String transportMode; // e.g. Road
+
+    // 👇 NEW: Order References
+    private String challanNo;
+    private Instant challanDate;
+    private String poNumber;      // Purchase Order No
+    private Instant poDate;
 
     // attachments
     @Builder.Default
@@ -43,6 +56,9 @@ public class Invoice {
         private String description;
         private int qty;
         private double rate;
+        private String hsnCode; 
+        private String uom;      // NOS, KGS, MTR
+        private double taxRate;  // e.g. 18.0
 
         public double getAmount() {
             return qty * rate;

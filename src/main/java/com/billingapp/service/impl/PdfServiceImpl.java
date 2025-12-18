@@ -1,17 +1,17 @@
 package com.billingapp.service.impl;
 
-import com.billingapp.dto.InvoiceDTO;
+import com.billingapp.entity.Company;
 import com.billingapp.entity.Invoice;
-import com.billingapp.mapper.InvoiceMapper;
+import com.billingapp.repository.CompanyRepository;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.PdfService;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.PDPageContentStream;
-import org.apache.pdfbox.pdmodel.common.PDRectangle;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
 
+import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -19,164 +19,200 @@ import java.time.format.DateTimeFormatter;
 @Service
 public class PdfServiceImpl implements PdfService {
 
-    // using field injection to avoid any constructor/lookup complexities
-    @org.springframework.beans.factory.annotation.Autowired
-    private InvoiceRepository invoiceRepository;
+    private final InvoiceRepository invoiceRepository;
+    private final CompanyRepository companyRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    private InvoiceMapper mapper;
+    public PdfServiceImpl(InvoiceRepository invoiceRepository, CompanyRepository companyRepository) {
+        this.invoiceRepository = invoiceRepository;
+        this.companyRepository = companyRepository;
+    }
 
     @Override
     public ByteArrayOutputStream generateInvoicePdf(String invoiceId) throws Exception {
+        // 1. Fetch Data
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + invoiceId));
+        
+        // Fetch Company Profile (or use defaults)
+        Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
+        if(company.getCompanyName() == null) company.setCompanyName("Your Company Name");
 
-        InvoiceDTO dto = mapper.toDto(invoice);
+        // 2. Setup Document
+        Document document = new Document(PageSize.A4);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        PdfWriter.getInstance(document, out);
 
-        try (PDDocument doc = new PDDocument()) {
-            PDPage page = new PDPage(PDRectangle.A4);
-            doc.addPage(page);
+        document.open();
+        addImage(document, company.getLogoUrl());
+        // --- HEADER SECTION ---
+        // Company Name (Big Bold)
+        Font companyFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.BLACK);
+        Paragraph companyName = new Paragraph(company.getCompanyName(), companyFont);
+        companyName.setAlignment(Element.ALIGN_LEFT);
+        document.add(companyName);
 
-            PDPageContentStream cs = new PDPageContentStream(doc, page);
+        // Company Address & Details
+        Font smallFont = FontFactory.getFont(FontFactory.HELVETICA, 10, Color.DARK_GRAY);
+        document.add(new Paragraph(company.getAddress(), smallFont));
+        document.add(new Paragraph("Phone: " + (company.getPhone() != null ? company.getPhone() : "-") + " | Email: " + (company.getEmail() != null ? company.getEmail() : "-"), smallFont));
+        if(company.getGstin() != null) {
+            document.add(new Paragraph("GSTIN: " + company.getGstin(), smallFont));
+        }
+        
+        document.add(Chunk.NEWLINE);
+        
+        // Title: TAX INVOICE
+        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.BLACK);
+        Paragraph title = new Paragraph("TAX INVOICE", titleFont);
+        title.setAlignment(Element.ALIGN_CENTER);
+        document.add(title);
+        document.add(Chunk.NEWLINE);
 
-            float margin = 50;
-            float y = page.getMediaBox().getHeight() - margin;
+        // --- INVOICE & CLIENT DETAILS (2 Columns) ---
+        PdfPTable infoTable = new PdfPTable(2);
+        infoTable.setWidthPercentage(100);
+        infoTable.setWidths(new float[]{1, 1});
 
-            // Header: Title and invoice meta
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_BOLD, 18);
-            cs.newLineAtOffset(margin, y);
-            cs.showText("INVOICE");
-            cs.endText();
+        // Left: Client Details
+        PdfPCell clientCell = new PdfPCell();
+        clientCell.setBorder(Rectangle.BOX);
+        clientCell.setPadding(10);
+        clientCell.addElement(new Paragraph("BILLED TO:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        // We need client name (currently stored on invoice or fetch client)
+        // Ideally fetch client to get name if not stored on invoice snapshot
+        // For now using placeholder or if you stored clientName on Invoice entity, use that.
+        // Assuming billingAddress contains the full block:
+        clientCell.addElement(new Paragraph(invoice.getBillingAddress() != null ? invoice.getBillingAddress() : "Client Address", smallFont));
+        infoTable.addCell(clientCell);
 
-            y -= 30;
+        // Right: Invoice Specifics
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy").withZone(ZoneId.systemDefault());
+        PdfPCell invCell = new PdfPCell();
+        invCell.setBorder(Rectangle.BOX);
+        invCell.setPadding(10);
+        invCell.addElement(new Paragraph("Invoice No: " + invoice.getInvoiceNo(), smallFont));
+        invCell.addElement(new Paragraph("Date: " + (invoice.getIssuedAt() != null ? formatter.format(invoice.getIssuedAt()) : "-"), smallFont));
+        if(invoice.getPoNumber() != null) invCell.addElement(new Paragraph("PO No: " + invoice.getPoNumber(), smallFont));
+        if(invoice.getTransportMode() != null) invCell.addElement(new Paragraph("Transport: " + invoice.getTransportMode(), smallFont));
+        if(invoice.getEwayBillNo() != null) invCell.addElement(new Paragraph("E-Way Bill: " + invoice.getEwayBillNo(), smallFont));
+        infoTable.addCell(invCell);
 
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA, 11);
-            cs.newLineAtOffset(margin, y);
-            cs.showText("Invoice No: " + safe(dto.getInvoiceNo()));
-            cs.endText();
+        document.add(infoTable);
+        document.add(Chunk.NEWLINE);
 
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA, 11);
-            cs.newLineAtOffset(margin + 300, y);
-            String issued = dto.getIssuedAt() != null ? DateTimeFormatter.ISO_LOCAL_DATE
-                    .withZone(ZoneId.systemDefault()).format(dto.getIssuedAt()) : "";
-            cs.showText("Issued: " + issued);
-            cs.endText();
+        // --- ITEMS TABLE ---
+        PdfPTable table = new PdfPTable(7); // Desc, HSN, Qty, UOM, Rate, Tax, Amount
+        table.setWidthPercentage(100);
+        table.setWidths(new float[]{4, 1.5f, 1, 1, 1.5f, 1, 2});
 
-            y -= 20;
+        // Headers
+        String[] headers = {"Description", "HSN", "Qty", "Unit", "Rate", "Tax", "Amount"};
+        for (String h : headers) {
+            PdfPCell cell = new PdfPCell(new Phrase(h, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+            cell.setBackgroundColor(Color.LIGHT_GRAY);
+            cell.setPadding(5);
+            cell.setHorizontalAlignment(Element.ALIGN_CENTER);
+            table.addCell(cell);
+        }
 
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA, 11);
-            cs.newLineAtOffset(margin, y);
-            cs.showText("Client ID: " + safe(dto.getClientId()));
-            cs.endText();
-
-            y -= 25;
-
-            // Draw items table header
-            float tableTopY = y;
-            float tableX = margin;
-            float[] colWidths = { 260, 60, 80, 80 }; // description, qty, rate, amount
-            float rowHeight = 18;
-
-            // header row
-            cs.setFont(PDType1Font.HELVETICA_BOLD, 11);
-            cs.beginText();
-            cs.newLineAtOffset(tableX + 2, tableTopY);
-            cs.showText("Description");
-            cs.endText();
-
-            cs.beginText();
-            cs.newLineAtOffset(tableX + colWidths[0] + 2, tableTopY);
-            cs.showText("Qty");
-            cs.endText();
-
-            cs.beginText();
-            cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1] + 2, tableTopY);
-            cs.showText("Rate");
-            cs.endText();
-
-            cs.beginText();
-            cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1] + colWidths[2] + 2, tableTopY);
-            cs.showText("Amount");
-            cs.endText();
-
-            y = tableTopY - rowHeight;
-
-            // draw items
-            cs.setFont(PDType1Font.HELVETICA, 11);
-            if (dto.getItems() != null) {
-                for (var item : dto.getItems()) {
-                    if (y < margin + 80) { // new page
-                        cs.close();
-                        PDPage newPage = new PDPage(PDRectangle.A4);
-                        doc.addPage(newPage);
-                        cs = new PDPageContentStream(doc, newPage);
-                        y = newPage.getMediaBox().getHeight() - margin - 30;
-                    }
-
-                    cs.beginText();
-                    cs.newLineAtOffset(tableX + 2, y);
-                    cs.showText(truncate(safe(item.getDescription()), 40));
-                    cs.endText();
-
-                    cs.beginText();
-                    cs.newLineAtOffset(tableX + colWidths[0] + 2, y);
-                    cs.showText(String.valueOf(item.getQty()));
-                    cs.endText();
-
-                    cs.beginText();
-                    cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1] + 2, y);
-                    cs.showText(String.format("%.2f", item.getRate()));
-                    cs.endText();
-
-                    cs.beginText();
-                    cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1] + colWidths[2] + 2, y);
-                    cs.showText(String.format("%.2f", item.getAmount()));
-                    cs.endText();
-
-                    y -= rowHeight;
-                }
+        // Rows
+        double totalTaxVal = 0;
+        if (invoice.getItems() != null) {
+            for (Invoice.InvoiceItem item : invoice.getItems()) {
+                table.addCell(createCell(item.getDescription(), Element.ALIGN_LEFT));
+                table.addCell(createCell(item.getHsnCode(), Element.ALIGN_CENTER));
+                table.addCell(createCell(String.valueOf(item.getQty()), Element.ALIGN_CENTER));
+                table.addCell(createCell(item.getUom(), Element.ALIGN_CENTER));
+                table.addCell(createCell(String.format("%.2f", item.getRate()), Element.ALIGN_RIGHT));
+                
+                // Tax Calculation for display (Item Tax Rate)
+                table.addCell(createCell(String.format("%.0f%%", item.getTaxRate()), Element.ALIGN_CENTER));
+                
+                // Amount (Qty * Rate)
+                double lineAmount = item.getQty() * item.getRate();
+                table.addCell(createCell(String.format("%.2f", lineAmount), Element.ALIGN_RIGHT));
+                
+                // Accumulate total tax
+                totalTaxVal += (lineAmount * item.getTaxRate() / 100);
             }
+        }
+        document.add(table);
 
-            // Totals block
-            y -= 10;
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_BOLD, 12);
-            cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1], y);
-            cs.showText("Subtotal: " + String.format("%.2f", dto.getSubtotal()));
-            cs.endText();
+        // --- TOTALS SECTION ---
+        PdfPTable totalTable = new PdfPTable(2);
+        totalTable.setWidthPercentage(40);
+        totalTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        
+        addTotalRow(totalTable, "Subtotal:", invoice.getSubtotal());
+        addTotalRow(totalTable, "Tax Amount:", totalTaxVal); // Calculated total tax
+        addTotalRow(totalTable, "Grand Total:", invoice.getTotal()); // Final stored total
+        
+        document.add(totalTable);
+        document.add(Chunk.NEWLINE);
 
-            y -= 16;
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_BOLD, 12);
-            cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1], y);
-            cs.showText("Tax: " + String.format("%.2f", dto.getTax()));
-            cs.endText();
+        // --- AMOUNT IN WORDS & BANK DETAILS ---
+        PdfPTable footerTable = new PdfPTable(2);
+        footerTable.setWidthPercentage(100);
+        
+        // Bank Details Cell
+        PdfPCell bankCell = new PdfPCell();
+        bankCell.setBorder(Rectangle.BOX);
+        bankCell.setPadding(10);
+        bankCell.addElement(new Paragraph("Bank Details:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        bankCell.addElement(new Paragraph("Bank Name: " + (company.getBankName() != null ? company.getBankName() : "-"), smallFont));
+        bankCell.addElement(new Paragraph("A/c No: " + (company.getAccountNumber() != null ? company.getAccountNumber() : "-"), smallFont));
+        bankCell.addElement(new Paragraph("IFSC: " + (company.getIfscCode() != null ? company.getIfscCode() : "-"), smallFont));
+        bankCell.addElement(new Paragraph("Branch: " + (company.getBranch() != null ? company.getBranch() : "-"), smallFont));
+        footerTable.addCell(bankCell);
+        
+        // Amount in Words Cell (Placeholder for now)
+        PdfPCell wordsCell = new PdfPCell();
+        wordsCell.setBorder(Rectangle.BOX);
+        wordsCell.setPadding(10);
+        wordsCell.addElement(new Paragraph("Amount in Words:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        // Simple logic or use a library. For now, we display the number.
+        wordsCell.addElement(new Paragraph("Total: " + String.format("%.2f", invoice.getTotal()), smallFont));
+        wordsCell.addElement(new Paragraph("\n\nFor " + company.getCompanyName(), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        wordsCell.addElement(new Paragraph("\n\nAuthorized Signatory", smallFont));
+        footerTable.addCell(wordsCell);
 
-            y -= 16;
-            cs.beginText();
-            cs.setFont(PDType1Font.HELVETICA_BOLD, 14);
-            cs.newLineAtOffset(tableX + colWidths[0] + colWidths[1], y);
-            cs.showText("Total: " + String.format("%.2f", dto.getTotal()));
-            cs.endText();
+        document.add(footerTable);
 
-            cs.close();
+        document.close();
+        return out;
+    }
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            doc.save(baos);
-            return baos;
+    // Helper for Cells
+    private PdfPCell createCell(String text, int alignment) {
+        PdfPCell cell = new PdfPCell(new Phrase(text != null ? text : "", FontFactory.getFont(FontFactory.HELVETICA, 10)));
+        cell.setPadding(5);
+        cell.setHorizontalAlignment(alignment);
+        return cell;
+    }
+
+    // Helper for Totals
+    private void addTotalRow(PdfPTable table, String label, double value) {
+        PdfPCell labelCell = new PdfPCell(new Phrase(label, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
+        labelCell.setBorder(Rectangle.NO_BORDER);
+        labelCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        table.addCell(labelCell);
+
+        PdfPCell valueCell = new PdfPCell(new Phrase(String.format("%.2f", value), FontFactory.getFont(FontFactory.HELVETICA, 10)));
+        valueCell.setBorder(Rectangle.NO_BORDER);
+        valueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        table.addCell(valueCell);
+    }
+    private void addImage(Document document, String imageUrl) {
+    if (imageUrl != null && !imageUrl.isEmpty()) {
+        try {
+            Image img = Image.getInstance(imageUrl);
+            img.scaleToFit(100, 50); // Resize logo to fit nicely
+            img.setAlignment(Element.ALIGN_LEFT);
+            document.add(img);
+        } catch (Exception e) {
+            System.err.println("Could not load image: " + imageUrl);
+            // We ignore the error so the PDF still generates even if the image fails
         }
     }
-
-    private static String safe(String s) {
-        return s == null ? "" : s;
-    }
-
-    private static String truncate(String s, int len) {
-        if (s == null) return "";
-        return s.length() <= len ? s : s.substring(0, len - 3) + "...";
-    }
+}
 }
