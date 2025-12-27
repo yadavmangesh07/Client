@@ -7,16 +7,20 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.repository.ClientRepository; // 👈 Make sure you have this
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.EmailService;      // 👈 Make sure you have this
+import com.billingapp.service.EwayBillService;
 import com.billingapp.service.InvoiceService;
 import com.billingapp.service.PdfService;        // 👈 Make sure you have this
 import jakarta.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired; // Important!
 import org.springframework.data.domain.Page;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/invoices")
@@ -127,6 +131,38 @@ public class InvoiceController {
             return ResponseEntity.ok("Email sent successfully");
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body("Error sending email: " + e.getMessage());
+        }
+    }
+
+    // ... other imports
+    @Autowired private EwayBillService ewayBillService; // Inject this
+
+    @GetMapping("/{id}/eway-json")
+    public ResponseEntity<byte[]> downloadEwayJson(@PathVariable String id) {
+        try {
+            byte[] jsonBytes = ewayBillService.generateJson(id);
+            String filename = "ewaybill_" + id + ".json";
+
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(jsonBytes);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+    @PatchMapping("/{id}/eway-bill")
+    public ResponseEntity<?> updateEwayBill(@PathVariable String id, @RequestBody Map<String, String> payload) {
+        try {
+            String ewayBillNo = payload.get("ewayBillNo");
+            Invoice invoice = invoiceRepository.findById(id).orElseThrow();
+            
+            invoice.setEwayBillNo(ewayBillNo); // Update field
+            invoiceRepository.save(invoice);
+            
+            return ResponseEntity.ok("E-Way Bill Number updated");
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().body("Failed to update");
         }
     }
 }

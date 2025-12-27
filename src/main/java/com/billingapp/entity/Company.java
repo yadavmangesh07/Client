@@ -34,6 +34,7 @@ public class Company {
     private String accountNumber;
     private String ifscCode;
     private String branch;
+    private String pincode;
 
     // Branding (URLs from StorageService)
     private String logoUrl;

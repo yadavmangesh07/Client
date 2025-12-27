@@ -5,6 +5,7 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.repository.CompanyRepository;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.PdfService;
+import com.billingapp.util.NumberToWords; // 👈 Import the Utility
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
@@ -35,7 +36,7 @@ public class PdfServiceImpl implements PdfService {
         
         // Fetch Company Profile (or use defaults)
         Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
-        if(company.getCompanyName() == null) company.setCompanyName("Your Company Name");
+        if(company.getCompanyName() == null) company.setCompanyName("JMD Decor");
 
         // 2. Setup Document
         Document document = new Document(PageSize.A4);
@@ -44,6 +45,7 @@ public class PdfServiceImpl implements PdfService {
 
         document.open();
         addImage(document, company.getLogoUrl());
+
         // --- HEADER SECTION ---
         // Company Name (Big Bold)
         Font companyFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 18, Color.BLACK);
@@ -78,10 +80,6 @@ public class PdfServiceImpl implements PdfService {
         clientCell.setBorder(Rectangle.BOX);
         clientCell.setPadding(10);
         clientCell.addElement(new Paragraph("BILLED TO:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
-        // We need client name (currently stored on invoice or fetch client)
-        // Ideally fetch client to get name if not stored on invoice snapshot
-        // For now using placeholder or if you stored clientName on Invoice entity, use that.
-        // Assuming billingAddress contains the full block:
         clientCell.addElement(new Paragraph(invoice.getBillingAddress() != null ? invoice.getBillingAddress() : "Client Address", smallFont));
         infoTable.addCell(clientCell);
 
@@ -123,16 +121,16 @@ public class PdfServiceImpl implements PdfService {
                 table.addCell(createCell(item.getHsnCode(), Element.ALIGN_CENTER));
                 table.addCell(createCell(String.valueOf(item.getQty()), Element.ALIGN_CENTER));
                 table.addCell(createCell(item.getUom(), Element.ALIGN_CENTER));
-                table.addCell(createCell(String.format("%.2f", item.getRate()), Element.ALIGN_RIGHT));
                 
-                // Tax Calculation for display (Item Tax Rate)
+                // 👇 Added "Rs."
+                table.addCell(createCell("Rs. " + String.format("%.2f", item.getRate()), Element.ALIGN_RIGHT));
+                
                 table.addCell(createCell(String.format("%.0f%%", item.getTaxRate()), Element.ALIGN_CENTER));
                 
-                // Amount (Qty * Rate)
                 double lineAmount = item.getQty() * item.getRate();
-                table.addCell(createCell(String.format("%.2f", lineAmount), Element.ALIGN_RIGHT));
+                // 👇 Added "Rs."
+                table.addCell(createCell("Rs. " + String.format("%.2f", lineAmount), Element.ALIGN_RIGHT));
                 
-                // Accumulate total tax
                 totalTaxVal += (lineAmount * item.getTaxRate() / 100);
             }
         }
@@ -144,8 +142,8 @@ public class PdfServiceImpl implements PdfService {
         totalTable.setHorizontalAlignment(Element.ALIGN_RIGHT);
         
         addTotalRow(totalTable, "Subtotal:", invoice.getSubtotal());
-        addTotalRow(totalTable, "Tax Amount:", totalTaxVal); // Calculated total tax
-        addTotalRow(totalTable, "Grand Total:", invoice.getTotal()); // Final stored total
+        addTotalRow(totalTable, "Tax Amount:", totalTaxVal);
+        addTotalRow(totalTable, "Grand Total:", invoice.getTotal());
         
         document.add(totalTable);
         document.add(Chunk.NEWLINE);
@@ -165,13 +163,16 @@ public class PdfServiceImpl implements PdfService {
         bankCell.addElement(new Paragraph("Branch: " + (company.getBranch() != null ? company.getBranch() : "-"), smallFont));
         footerTable.addCell(bankCell);
         
-        // Amount in Words Cell (Placeholder for now)
+        // Amount in Words Cell
         PdfPCell wordsCell = new PdfPCell();
         wordsCell.setBorder(Rectangle.BOX);
         wordsCell.setPadding(10);
         wordsCell.addElement(new Paragraph("Amount in Words:", FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
-        // Simple logic or use a library. For now, we display the number.
-        wordsCell.addElement(new Paragraph("Total: " + String.format("%.2f", invoice.getTotal()), smallFont));
+        
+        // 👇 USE NUMBER TO WORDS UTILITY
+        String words = NumberToWords.convert(invoice.getTotal());
+        wordsCell.addElement(new Paragraph(words, smallFont));
+
         wordsCell.addElement(new Paragraph("\n\nFor " + company.getCompanyName(), FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10)));
         wordsCell.addElement(new Paragraph("\n\nAuthorized Signatory", smallFont));
         footerTable.addCell(wordsCell);
@@ -179,8 +180,10 @@ public class PdfServiceImpl implements PdfService {
         document.add(footerTable);
 
         document.close();
-    return out.toByteArray(); // ✅ Fix
-}
+        
+        // ✅ CORRECTED RETURN
+        return out.toByteArray();
+    }
 
     // Helper for Cells
     private PdfPCell createCell(String text, int alignment) {
@@ -197,22 +200,23 @@ public class PdfServiceImpl implements PdfService {
         labelCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         table.addCell(labelCell);
 
-        PdfPCell valueCell = new PdfPCell(new Phrase(String.format("%.2f", value), FontFactory.getFont(FontFactory.HELVETICA, 10)));
+        // 👇 Added "Rs."
+        PdfPCell valueCell = new PdfPCell(new Phrase("Rs. " + String.format("%.2f", value), FontFactory.getFont(FontFactory.HELVETICA, 10)));
         valueCell.setBorder(Rectangle.NO_BORDER);
         valueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         table.addCell(valueCell);
     }
+    
     private void addImage(Document document, String imageUrl) {
-    if (imageUrl != null && !imageUrl.isEmpty()) {
-        try {
-            Image img = Image.getInstance(imageUrl);
-            img.scaleToFit(100, 50); // Resize logo to fit nicely
-            img.setAlignment(Element.ALIGN_LEFT);
-            document.add(img);
-        } catch (Exception e) {
-            System.err.println("Could not load image: " + imageUrl);
-            // We ignore the error so the PDF still generates even if the image fails
+        if (imageUrl != null && !imageUrl.isEmpty()) {
+            try {
+                Image img = Image.getInstance(imageUrl);
+                img.scaleToFit(100, 50); 
+                img.setAlignment(Element.ALIGN_LEFT);
+                document.add(img);
+            } catch (Exception e) {
+                System.err.println("Could not load image: " + imageUrl);
+            }
         }
     }
-}
 }

@@ -1,7 +1,10 @@
 package com.billingapp.entity;
 
 import lombok.*;
+
+import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
@@ -21,8 +24,10 @@ public class Client {
     private String phone;
     private String address;
     private String notes;
-
+    private String pincode;
+    @CreatedDate
     private Instant createdAt;
+    @LastModifiedDate
     private Instant updatedAt;
     
     private String gstin;      // Client's Tax Number

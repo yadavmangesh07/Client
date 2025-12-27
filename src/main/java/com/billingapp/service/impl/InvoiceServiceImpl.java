@@ -7,7 +7,7 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.mapper.InvoiceMapper;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.InvoiceService;
-import com.billingapp.util.InvoiceNumberUtil;
+// import com.billingapp.util.InvoiceNumberUtil; // 👈 Removed, logic is now internal
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -16,9 +16,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate; // 👈 Added
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional; // 👈 Added
 import java.util.stream.Collectors;
 
 @Service
@@ -42,7 +44,9 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
 
         Invoice invoice = mapper.toEntity(req);
-        invoice.setInvoiceNo(InvoiceNumberUtil.generate());
+        
+        // 👇 UPDATED: Generate Smart Invoice Number (JMD/2025-26/97)
+        invoice.setInvoiceNo(generateInvoiceNumber());
 
         double subtotal = computeSubtotalFromItems(req.getItems());
         invoice.setSubtotal(subtotal);
@@ -73,6 +77,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         Invoice existing = invoiceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + id));
 
+        // 1. Update Items & Totals
         if (req.getItems() != null && !req.getItems().isEmpty()) {
             existing.setItems(mapper.toEntity(req).getItems());
             double subtotal = computeSubtotalFromItems(req.getItems());
@@ -80,14 +85,27 @@ public class InvoiceServiceImpl implements InvoiceService {
             existing.setTotal(subtotal + req.getTax());
             existing.setTax(req.getTax());
         } else if (req.getTax() != 0d) {
+            // Recalculate if only tax changed
             existing.setTax(req.getTax());
             existing.setTotal(existing.getSubtotal() + req.getTax());
         }
 
+        // 2. Update Standard Fields
         if (req.getStatus() != null) existing.setStatus(req.getStatus());
         if (req.getIssuedAt() != null) existing.setIssuedAt(req.getIssuedAt());
         if (req.getDueDate() != null) existing.setDueDate(req.getDueDate());
         if (req.getCreatedBy() != null) existing.setCreatedBy(req.getCreatedBy());
+        if (req.getClientId() != null) existing.setClientId(req.getClientId());
+
+        // 3. 👇 Update New Logistics/Address Fields
+        if (req.getBillingAddress() != null) existing.setBillingAddress(req.getBillingAddress());
+        if (req.getShippingAddress() != null) existing.setShippingAddress(req.getShippingAddress());
+        if (req.getTransportMode() != null) existing.setTransportMode(req.getTransportMode());
+        if (req.getEwayBillNo() != null) existing.setEwayBillNo(req.getEwayBillNo());
+        if (req.getPoNumber() != null) existing.setPoNumber(req.getPoNumber());
+        if (req.getPoDate() != null) existing.setPoDate(req.getPoDate());
+        if (req.getChallanNo() != null) existing.setChallanNo(req.getChallanNo());
+        if (req.getChallanDate() != null) existing.setChallanDate(req.getChallanDate());
 
         existing.setUpdatedAt(Instant.now());
         Invoice saved = invoiceRepository.save(existing);
@@ -167,5 +185,45 @@ public class InvoiceServiceImpl implements InvoiceService {
         } catch (Exception e) {
             return defaultSort;
         }
+    }
+
+    // 👇 NEW LOGIC: Dynamic Financial Year + Auto Increment
+    private String generateInvoiceNumber() {
+        LocalDate now = LocalDate.now();
+        int year = now.getYear();
+        int month = now.getMonthValue(); // 1 to 12
+
+        String fy;
+        // Financial Year Logic: If Month is Jan(1), Feb(2), Mar(3) -> Previous Year is start of FY
+        // Example: Jan 2026 => FY 2025-26
+        if (month <= 3) {
+            fy = (year - 1) + "-" + String.valueOf(year).substring(2); 
+        } else {
+            // Example: April 2025 => FY 2025-26
+            fy = year + "-" + String.valueOf(year + 1).substring(2); 
+        }
+
+        String prefix = "JMD/" + fy + "/";
+
+        // Find the last invoice with this specific prefix
+        // NOTE: Ensure InvoiceRepository has findTopByInvoiceNoStartingWithOrderByCreatedAtDesc
+        Optional<Invoice> lastInvoice = invoiceRepository.findTopByInvoiceNoStartingWithOrderByCreatedAtDesc(prefix);
+
+        int nextNum = 1;
+        if (lastInvoice.isPresent()) {
+            String lastNo = lastInvoice.get().getInvoiceNo();
+            // Format is JMD/2025-26/97
+            String[] parts = lastNo.split("/");
+            if (parts.length == 3) {
+                try {
+                    int lastSeq = Integer.parseInt(parts[2]);
+                    nextNum = lastSeq + 1;
+                } catch (NumberFormatException e) {
+                    nextNum = 1; // Safety fallback
+                }
+            }
+        }
+
+        return prefix + nextNum;
     }
 }
