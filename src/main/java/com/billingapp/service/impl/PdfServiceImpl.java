@@ -28,7 +28,7 @@ public class PdfServiceImpl implements PdfService {
     }
 
     @Override
-    public ByteArrayOutputStream generateInvoicePdf(String invoiceId) throws Exception {
+    public byte[] generateInvoicePdf(String invoiceId) throws Exception {
         // 1. Fetch Data
         Invoice invoice = invoiceRepository.findById(invoiceId)
                 .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + invoiceId));
@@ -179,8 +179,8 @@ public class PdfServiceImpl implements PdfService {
         document.add(footerTable);
 
         document.close();
-        return out;
-    }
+    return out.toByteArray(); // ✅ Fix
+}
 
     // Helper for Cells
     private PdfPCell createCell(String text, int alignment) {

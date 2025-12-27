@@ -19,8 +19,9 @@ public class InvoicePdfController {
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(@PathVariable("id") String id) {
         try {
-            var baos = pdfService.generateInvoicePdf(id);
-            byte[] bytes = baos.toByteArray();
+            // ✅ Fix: Receive byte[] directly
+            byte[] bytes = pdfService.generateInvoicePdf(id);
+            
             String filename = "invoice-" + id + ".pdf";
 
             return ResponseEntity.ok()

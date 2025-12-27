@@ -2,6 +2,7 @@ package com.billingapp.controller;
 
 import com.billingapp.dto.CreateInvoiceRequest;
 import com.billingapp.dto.InvoiceDTO;
+import com.billingapp.entity.Client;
 import com.billingapp.entity.Invoice;
 import com.billingapp.repository.ClientRepository; // 👈 Make sure you have this
 import com.billingapp.repository.InvoiceRepository;
@@ -105,39 +106,27 @@ public class InvoiceController {
     @PostMapping("/{id}/send-email")
     public ResponseEntity<?> sendInvoiceEmail(@PathVariable String id) {
         try {
-            // 1. Get Invoice
-            Invoice invoice = invoiceRepository.findById(id)
-                    .orElseThrow(() -> new IllegalArgumentException("Invoice not found"));
-
-            // 2. Get Client Email
-            var client = clientRepository.findById(invoice.getClientId())
-                    .orElseThrow(() -> new IllegalArgumentException("Client not found"));
+            // 1. Fetch data needed for Email Subject/Body
+            Invoice invoice = invoiceRepository.findById(id).orElseThrow();
+            Client client = clientRepository.findById(invoice.getClientId()).orElseThrow();
             
-            if (client.getEmail() == null || client.getEmail().isEmpty()) {
-                return ResponseEntity.badRequest().body("Client does not have an email address.");
-            }
-
-            // 3. Generate PDF
-            var pdfStream = pdfService.generateInvoicePdf(id);
-            byte[] pdfBytes = pdfStream.toByteArray();
-
-            // 4. Send Email
-            String subject = "Invoice #" + invoice.getInvoiceNo() + " from Billing App";
-            String body = "Dear " + client.getName() + ",\n\nPlease find attached your invoice.\n\nThank you,\nMy Billing Company";
+            // 2. Generate PDF (Pass ID, not the object)
+            byte[] pdfBytes = pdfService.generateInvoicePdf(id); // 👈 FIXED HERE
+            
+            // 3. Prepare Email
+            String body = "We hope you are doing well. Here is the invoice <b>#" + invoice.getId().substring(0,8) + "</b> for your recent order.";
             
             emailService.sendEmailWithAttachment(
                 client.getEmail(),
-                subject,
+                "Invoice #" + invoice.getId().substring(0,6) + " from JMD Decor",
                 body,
                 pdfBytes,
-                "invoice-" + invoice.getInvoiceNo() + ".pdf"
+                "Invoice_" + invoice.getId().substring(0,6) + ".pdf"
             );
-
-            return ResponseEntity.ok("Email sent successfully to " + client.getEmail());
-
+            
+            return ResponseEntity.ok("Email sent successfully");
         } catch (Exception e) {
-            e.printStackTrace(); // 👈 This prints the error to your Java Console
-            return ResponseEntity.internalServerError().body("Failed to send email: " + e.getMessage());
+            return ResponseEntity.internalServerError().body("Error sending email: " + e.getMessage());
         }
     }
 }
