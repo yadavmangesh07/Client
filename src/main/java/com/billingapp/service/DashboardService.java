@@ -23,41 +23,30 @@ public class DashboardService {
     public Map<String, Object> getDashboardStats() {
         Map<String, Object> stats = new HashMap<>();
 
-        // 1. Get All Invoices (In a real app, you would filter by UserId here)
-        List<Invoice> invoices = invoiceRepository.findAll();
+        // 1. REVENUE (Database Calculation)
+        // Handle null in case there are no invoices yet
+        Double totalRevenue = invoiceRepository.sumTotalAmount();
+        stats.put("totalRevenue", totalRevenue != null ? totalRevenue : 0.0);
 
-        // 2. Calculate Totals
-        double totalRevenue = invoices.stream()
-                .mapToDouble(Invoice::getTotal)
-                .sum();
-                
-        double pendingAmount = invoices.stream()
-                .filter(inv -> "PENDING".equalsIgnoreCase(inv.getStatus()) || "UNPAID".equalsIgnoreCase(inv.getStatus()))
-                .mapToDouble(Invoice::getTotal)
-                .sum();
+        // 2. PENDING AMOUNT (Database Calculation)
+        // Using "UNPAID" based on your screenshots. 
+        // If you use "PENDING" as well, you can sum both: sumTotalByStatus("UNPAID") + sumTotalByStatus("PENDING")
+        Double unpaid = invoiceRepository.sumTotalByStatus("UNPAID");
+        stats.put("pendingAmount", unpaid != null ? unpaid : 0.0);
+        
+        // 3. COUNTS (Efficient DB Count)
+        stats.put("totalInvoices", invoiceRepository.count());
+        stats.put("totalClients", clientRepository.count());
+        
+        // Count specific statuses for the UI badges if needed
+        stats.put("paidInvoices", invoiceRepository.countByStatus("PAID"));
+        stats.put("pendingInvoices", invoiceRepository.countByStatus("UNPAID"));
 
-        // 3. Counts
-        long totalInvoices = invoices.size();
-        long totalClients = clientRepository.count();
-
-        // 4. Get Recent Invoices (Last 5)
-        // Sort by IssuedAt (descending) and take top 5
-        List<Invoice> recentInvoices = invoices.stream()
-                .sorted((i1, i2) -> {
-                    if (i1.getIssuedAt() == null || i2.getIssuedAt() == null) return 0;
-                    return i2.getIssuedAt().compareTo(i1.getIssuedAt());
-                })
-                .limit(5)
-                .toList();
-
-        // 5. Populate Map
-        stats.put("totalRevenue", totalRevenue);
-        stats.put("pendingAmount", pendingAmount);
-        stats.put("totalInvoices", totalInvoices);
-        stats.put("totalClients", totalClients);
+        // 4. RECENT ACTIVITY (Top 5 only)
+        List<Invoice> recentInvoices = invoiceRepository.findTop5ByOrderByCreatedAtDesc();
         stats.put("recentInvoices", recentInvoices);
         
-        // Empty Monthly Stats for now (can be added later)
+        // 5. Monthly Stats Placeholder (Can implement aggregation later)
         stats.put("monthlyStats", List.of());
 
         return stats;

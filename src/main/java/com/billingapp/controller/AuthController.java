@@ -9,6 +9,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.List;
 import java.util.Map;
 
@@ -93,5 +94,23 @@ public class AuthController {
         }
         userRepository.deleteById(id);
         return ResponseEntity.ok("User deleted successfully");
+    }
+
+    // ... inside AuthController
+
+    @PostMapping("/verify-password")
+    public ResponseEntity<?> verifyPassword(@RequestBody Map<String, String> payload, Principal principal) {
+        String password = payload.get("password");
+        
+        // 1. Get current logged-in user
+        User user = userRepository.findByUsername(principal.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 2. Check password match
+        if (!passwordEncoder.matches(password, user.getPassword())) {
+            return ResponseEntity.status(401).body("Incorrect password");
+        }
+
+        return ResponseEntity.ok(Map.of("success", true));
     }
 }
