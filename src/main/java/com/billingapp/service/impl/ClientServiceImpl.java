@@ -53,10 +53,6 @@ public class ClientServiceImpl implements ClientService {
 
     @Override
     public ClientDTO update(String id, CreateClientRequest req) {
-        System.out.println("DEBUG UPDATE: Received Request for ID: " + id);
-    System.out.println("DEBUG UPDATE: Payload State: " + req.getState());
-    System.out.println("DEBUG UPDATE: Payload StateCode: " + req.getStateCode());
-    System.out.println("DEBUG UPDATE: Payload GSTIN: " + req.getGstin());
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
         
