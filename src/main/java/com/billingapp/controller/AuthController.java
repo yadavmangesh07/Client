@@ -10,6 +10,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -17,13 +18,11 @@ import java.util.Map;
 @RequestMapping("/api/auth")
 public class AuthController {
 
-    // 1. Declare the dependencies
     private final AuthenticationManager authenticationManager;
-    private final UserRepository userRepository; // <--- This was likely missing
+    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtUtils jwtUtil;
 
-    // 2. Initialize them in the Constructor
     public AuthController(AuthenticationManager authenticationManager, 
                           UserRepository userRepository, 
                           PasswordEncoder passwordEncoder, 
@@ -34,13 +33,14 @@ public class AuthController {
         this.jwtUtil = jwtUtil;
     }
 
-    // --- LOGIN ENDPOINT ---
+    // --- LOGIN ENDPOINT (UPDATED) ---
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
         String username = request.get("username");
         String password = request.get("password");
 
         try {
+            // 1. Authenticate credentials
             authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(username, password)
             );
@@ -48,11 +48,23 @@ public class AuthController {
             return ResponseEntity.status(401).body("Invalid username or password");
         }
 
+        // 2. Generate Token
         String token = jwtUtil.generateToken(username);
-        return ResponseEntity.ok(Map.of("token", token));
+
+        // 3. Retrieve User Details (to get the Role)
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 4. Construct Response with Token + Role + Username
+        Map<String, String> response = new HashMap<>();
+        response.put("token", token);
+        response.put("username", user.getUsername());
+        response.put("role", user.getRole()); // This is the key fix!
+
+        return ResponseEntity.ok(response);
     }
 
-    // --- REGISTER ENDPOINT (New) ---
+    // --- REGISTER ENDPOINT ---
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody Map<String, String> body) {
         String username = body.get("username");
@@ -77,16 +89,17 @@ public class AuthController {
 
         return ResponseEntity.ok("User registered successfully");
     }
+
+    // --- GET ALL USERS ---
     @GetMapping("/users")
     public ResponseEntity<List<User>> getAllUsers() {
-        // Security Tip: In a real app, verify the requester is ADMIN here
         List<User> users = userRepository.findAll();
         // Hide passwords in response for security
         users.forEach(u -> u.setPassword("HIDDEN")); 
         return ResponseEntity.ok(users);
     }
 
-    // 2. Delete User
+    // --- DELETE USER ---
     @DeleteMapping("/users/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable String id) {
         if (!userRepository.existsById(id)) {
@@ -96,8 +109,7 @@ public class AuthController {
         return ResponseEntity.ok("User deleted successfully");
     }
 
-    // ... inside AuthController
-
+    // --- VERIFY PASSWORD (For Settings Security) ---
     @PostMapping("/verify-password")
     public ResponseEntity<?> verifyPassword(@RequestBody Map<String, String> payload, Principal principal) {
         String password = payload.get("password");

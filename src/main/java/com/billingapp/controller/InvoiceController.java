@@ -4,15 +4,13 @@ import com.billingapp.dto.CreateInvoiceRequest;
 import com.billingapp.dto.InvoiceDTO;
 import com.billingapp.entity.Client;
 import com.billingapp.entity.Invoice;
-import com.billingapp.repository.ClientRepository; // 👈 Make sure you have this
+import com.billingapp.repository.ClientRepository;
 import com.billingapp.repository.InvoiceRepository;
-import com.billingapp.service.EmailService;      // 👈 Make sure you have this
+import com.billingapp.service.EmailService;
 import com.billingapp.service.EwayBillService;
 import com.billingapp.service.InvoiceService;
-import com.billingapp.service.PdfService;        // 👈 Make sure you have this
+import com.billingapp.service.PdfService;
 import jakarta.validation.Valid;
-
-import org.springframework.beans.factory.annotation.Autowired; // Important!
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -24,40 +22,43 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/invoices")
+@CrossOrigin("*") // Ensures frontend can access this
 public class InvoiceController {
 
+    // 1. Declare ALL dependencies as final
     private final InvoiceService invoiceService;
     private final InvoiceRepository invoiceRepository;
+    private final ClientRepository clientRepository;
+    private final PdfService pdfService;
+    private final EmailService emailService;
+    private final EwayBillService ewayBillService;
 
-    // 👇 Inject these 3 new dependencies
-    @Autowired
-    private PdfService pdfService;
-    
-    @Autowired
-    private EmailService emailService;
-    
-    @Autowired
-    private ClientRepository clientRepository;
-
-    // Constructor
-    public InvoiceController(InvoiceService invoiceService, InvoiceRepository invoiceRepository) {
+    // 2. Single Constructor for Injection (Best Practice)
+    public InvoiceController(InvoiceService invoiceService,
+                             InvoiceRepository invoiceRepository,
+                             ClientRepository clientRepository,
+                             PdfService pdfService,
+                             EmailService emailService,
+                             EwayBillService ewayBillService) {
         this.invoiceService = invoiceService;
         this.invoiceRepository = invoiceRepository;
+        this.clientRepository = clientRepository;
+        this.pdfService = pdfService;
+        this.emailService = emailService;
+        this.ewayBillService = ewayBillService;
     }
 
-    // --- Existing Endpoints ---
+    // --- Endpoints ---
 
     @GetMapping
     public ResponseEntity<List<InvoiceDTO>> listAll() {
-        List<InvoiceDTO> all = invoiceService.getAll();
-        return ResponseEntity.ok(all);
+        return ResponseEntity.ok(invoiceService.getAll());
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<InvoiceDTO> getById(@PathVariable String id) {
         try {
-            InvoiceDTO dto = invoiceService.getById(id);
-            return ResponseEntity.ok(dto);
+            return ResponseEntity.ok(invoiceService.getById(id));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.notFound().build();
         }
@@ -65,15 +66,13 @@ public class InvoiceController {
 
     @PostMapping
     public ResponseEntity<InvoiceDTO> create(@Valid @RequestBody CreateInvoiceRequest req) {
-        InvoiceDTO created = invoiceService.create(req);
-        return ResponseEntity.ok(created);
+        return ResponseEntity.ok(invoiceService.create(req));
     }
 
     @PutMapping("/{id}")
     public ResponseEntity<InvoiceDTO> update(@PathVariable String id, @Valid @RequestBody CreateInvoiceRequest req) {
         try {
-            InvoiceDTO updated = invoiceService.update(id, req);
-            return ResponseEntity.ok(updated);
+            return ResponseEntity.ok(invoiceService.update(id, req));
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.notFound().build();
         }
@@ -101,41 +100,37 @@ public class InvoiceController {
             @RequestParam(value = "size", defaultValue = "10") int size,
             @RequestParam(value = "sort", required = false) String sort
     ) {
-        Page<InvoiceDTO> result = invoiceService.search(clientId, status, fromIso, toIso, minTotal, maxTotal, page, size, sort);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok(invoiceService.search(clientId, status, fromIso, toIso, minTotal, maxTotal, page, size, sort));
     }
 
-    // --- 👇 THE NEW EMAIL ENDPOINT ---
-
+    // --- EMAIL ENDPOINT (Quick Send) ---
+    // Note: The new Popup uses EmailController, but we keep this as a backup API
     @PostMapping("/{id}/send-email")
     public ResponseEntity<?> sendInvoiceEmail(@PathVariable String id) {
         try {
-            // 1. Fetch data needed for Email Subject/Body
             Invoice invoice = invoiceRepository.findById(id).orElseThrow();
             Client client = clientRepository.findById(invoice.getClientId()).orElseThrow();
             
-            // 2. Generate PDF (Pass ID, not the object)
-            byte[] pdfBytes = pdfService.generateInvoicePdf(id); // 👈 FIXED HERE
+            byte[] pdfBytes = pdfService.generateInvoicePdf(id);
             
-            // 3. Prepare Email
-            String body = "We hope you are doing well. Here is the invoice <b>#" + invoice.getId().substring(0,8) + "</b> for your recent order.";
+            String body = "We hope you are doing well. Here is the invoice <b>#" + invoice.getInvoiceNo() + "</b> for your recent order.";
             
             emailService.sendEmailWithAttachment(
                 client.getEmail(),
-                "Invoice #" + invoice.getId().substring(0,6) + " from JMD Decor",
+                "Invoice #" + invoice.getInvoiceNo() + " from JMD Decor",
                 body,
                 pdfBytes,
-                "Invoice_" + invoice.getId().substring(0,6) + ".pdf"
+                "Invoice_" + invoice.getInvoiceNo() + ".pdf"
             );
             
             return ResponseEntity.ok("Email sent successfully");
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.internalServerError().body("Error sending email: " + e.getMessage());
         }
     }
 
-    // ... other imports
-    @Autowired private EwayBillService ewayBillService; // Inject this
+    // --- E-WAY BILL ENDPOINTS ---
 
     @GetMapping("/{id}/eway-json")
     public ResponseEntity<byte[]> downloadEwayJson(@PathVariable String id) {
@@ -151,13 +146,14 @@ public class InvoiceController {
             return ResponseEntity.internalServerError().build();
         }
     }
+
     @PatchMapping("/{id}/eway-bill")
     public ResponseEntity<?> updateEwayBill(@PathVariable String id, @RequestBody Map<String, String> payload) {
         try {
             String ewayBillNo = payload.get("ewayBillNo");
             Invoice invoice = invoiceRepository.findById(id).orElseThrow();
             
-            invoice.setEwayBillNo(ewayBillNo); // Update field
+            invoice.setEwayBillNo(ewayBillNo);
             invoiceRepository.save(invoice);
             
             return ResponseEntity.ok("E-Way Bill Number updated");

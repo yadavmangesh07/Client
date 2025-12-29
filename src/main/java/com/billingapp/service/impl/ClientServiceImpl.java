@@ -38,10 +38,39 @@ public class ClientServiceImpl implements ClientService {
                 .email(req.getEmail())
                 .phone(req.getPhone())
                 .address(req.getAddress())
+                .gstin(req.getGstin()) // 👈 Mapping gstNo (DTO) -> gstin (Entity)
                 .notes(req.getNotes())
+                .state(req.getState())
+                .stateCode(req.getStateCode())
+                .pincode(req.getPincode())
                 .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .build();
 
+        Client saved = clientRepository.save(client);
+        return mapper.toDto(saved);
+    }
+
+    @Override
+    public ClientDTO update(String id, CreateClientRequest req) {
+        System.out.println("DEBUG UPDATE: Received Request for ID: " + id);
+    System.out.println("DEBUG UPDATE: Payload State: " + req.getState());
+    System.out.println("DEBUG UPDATE: Payload StateCode: " + req.getStateCode());
+    System.out.println("DEBUG UPDATE: Payload GSTIN: " + req.getGstin());
+        Client client = clientRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
+        
+        client.setName(req.getName());
+        client.setEmail(req.getEmail());
+        client.setPhone(req.getPhone());
+        client.setAddress(req.getAddress());
+        client.setGstin(req.getGstin()); // 👈 Update GSTIN
+        client.setNotes(req.getNotes());
+        client.setState(req.getState());
+        client.setStateCode(req.getStateCode());
+        client.setPincode(req.getPincode());
+        client.setUpdatedAt(Instant.now());
+        
         Client saved = clientRepository.save(client);
         return mapper.toDto(saved);
     }
@@ -61,26 +90,12 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
-    public ClientDTO update(String id, CreateClientRequest req) {
-        Client client = clientRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
-        client.setName(req.getName());
-        client.setEmail(req.getEmail());
-        client.setPhone(req.getPhone());
-        client.setAddress(req.getAddress());
-        client.setNotes(req.getNotes());
-        client.setUpdatedAt(Instant.now());
-        Client saved = clientRepository.save(client);
-        return mapper.toDto(saved);
-    }
-
-    @Override
     public void delete(String id) {
         clientRepository.deleteById(id);
     }
 
     // --------------------------
-    // Search (fuzzy by name/email) with pagination & sort
+    // Optimized Search Implementation
     // --------------------------
     @Override
     public Page<ClientDTO> search(String q, int page, int size, String sort) {
@@ -90,7 +105,8 @@ public class ClientServiceImpl implements ClientService {
         Sort s = parseSort(sort, Sort.by(Sort.Direction.DESC, "createdAt"));
         Pageable pageable = PageRequest.of(page, size, s);
 
-        Query query = new Query().with(pageable);
+        Query query = new Query(); // 1. Build Base Query
+
         if (q != null && !q.isBlank()) {
             String regex = ".*" + q.trim() + ".*";
             Criteria criteria = new Criteria().orOperator(
@@ -99,20 +115,17 @@ public class ClientServiceImpl implements ClientService {
             );
             query.addCriteria(criteria);
         }
-        long total = mongoTemplate.count(query.skip(-1).limit(-1), Client.class); // count without pageable
-        // apply pageable properly:
-        query = new Query();
-        if (q != null && !q.isBlank()) {
-            String regex = ".*" + q.trim() + ".*";
-            Criteria criteria = new Criteria().orOperator(
-                    Criteria.where("name").regex(regex, "i"),
-                    Criteria.where("email").regex(regex, "i")
-            );
-            query.addCriteria(criteria);
-        }
+
+        // 2. Count Total (Before adding pagination)
+        long total = mongoTemplate.count(query, Client.class);
+
+        // 3. Apply Pagination & Sort
         query.with(pageable);
+
+        // 4. Fetch Data
         List<Client> list = mongoTemplate.find(query, Client.class);
         List<ClientDTO> dtos = list.stream().map(mapper::toDto).collect(Collectors.toList());
+        
         return new PageImpl<>(dtos, pageable, total);
     }
 
