@@ -54,7 +54,6 @@ public class PdfServiceImpl implements PdfService {
         String clientName = client.getName() != null ? client.getName() : "Unknown Client";
         String clientGst = client.getGstin() != null ? client.getGstin() : "-";
         
-        // 👇 NEW: Fetch Client State Details
         String clientState = client.getState() != null ? client.getState() : "-";
         String clientStateCode = client.getStateCode() != null ? client.getStateCode() : "-";
 
@@ -72,7 +71,8 @@ public class PdfServiceImpl implements PdfService {
             company.setBranch("Jawahar Nagar Mumbai");
         }
 
-        Document document = new Document(PageSize.A4, 20, 20, 20, 20);
+        // 👇 1. REDUCED MARGINS (Top/Bottom 15 instead of 20)
+        Document document = new Document(PageSize.A4, 20, 20, 15, 15);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, out);
 
@@ -102,7 +102,8 @@ public class PdfServiceImpl implements PdfService {
                 if (logoResource != null) img = Image.getInstance(logoResource);
             }
             if (img != null) {
-                img.scaleToFit(140, 70); 
+                // 👇 2. SMALLER LOGO (Fits better in header)
+                img.scaleToFit(100, 50); 
                 img.setAlignment(Element.ALIGN_RIGHT);
                 logoCell.addElement(img);
             } else { throw new RuntimeException("No img"); }
@@ -142,7 +143,7 @@ public class PdfServiceImpl implements PdfService {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd-MM-yyyy").withZone(ZoneId.systemDefault());
         String dateStr = invoice.getIssuedAt() != null ? dtf.format(invoice.getIssuedAt()) : "-";
         
-        // Seller Details (JMD is in Maharashtra)
+        // Seller Details
         rightGrid.addCell(createLabelValueCell("Bill No :", invoice.getInvoiceNo()));
         rightGrid.addCell(createLabelValueCell("Date :", dateStr));
         rightGrid.addCell(createLabelValueCell("Challan No.", invoice.getChallanNo()));
@@ -159,7 +160,7 @@ public class PdfServiceImpl implements PdfService {
         mainGrid.addCell(rightCellContainer);
         document.add(mainGrid);
 
-        // --- 3. CLIENT DETAILS (Address + State + GST) ---
+        // --- 3. CLIENT DETAILS ---
         PdfPTable addressGrid = new PdfPTable(2);
         addressGrid.setWidthPercentage(100);
         
@@ -170,22 +171,18 @@ public class PdfServiceImpl implements PdfService {
         billedTo.addElement(new Paragraph(clientName, FONT_BOLD)); 
         billedTo.addElement(new Paragraph(invoice.getBillingAddress(), FONT_NORMAL));
         
-        // 👇 ADDED STATE DETAILS HERE
         PdfPTable billStateTable = new PdfPTable(2);
         billStateTable.setWidthPercentage(100);
         billStateTable.setWidths(new float[]{1, 1});
-        
         PdfPCell stateLabel = new PdfPCell(new Phrase("State: " + clientState, FONT_BOLD));
         stateLabel.setBorder(Rectangle.NO_BORDER);
         billStateTable.addCell(stateLabel);
-        
         PdfPCell codeLabel = new PdfPCell(new Phrase("State Code: " + clientStateCode, FONT_BOLD));
         codeLabel.setBorder(Rectangle.NO_BORDER);
         codeLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
         billStateTable.addCell(codeLabel);
         
         billedTo.addElement(billStateTable);
-        
         billedTo.addElement(new Paragraph("GST NO: " + clientGst, FONT_BOLD));
         addressGrid.addCell(billedTo);
 
@@ -196,28 +193,24 @@ public class PdfServiceImpl implements PdfService {
         shippedTo.addElement(new Paragraph(clientName, FONT_BOLD));
         shippedTo.addElement(new Paragraph(invoice.getShippingAddress() != null ? invoice.getShippingAddress() : invoice.getBillingAddress(), FONT_NORMAL));
         
-        // 👇 ADDED STATE DETAILS HERE
         PdfPTable shipStateTable = new PdfPTable(2);
         shipStateTable.setWidthPercentage(100);
         shipStateTable.setWidths(new float[]{1, 1});
-        
         PdfPCell sStateLabel = new PdfPCell(new Phrase("State: " + clientState, FONT_BOLD));
         sStateLabel.setBorder(Rectangle.NO_BORDER);
         shipStateTable.addCell(sStateLabel);
-        
         PdfPCell sCodeLabel = new PdfPCell(new Phrase("State Code: " + clientStateCode, FONT_BOLD));
         sCodeLabel.setBorder(Rectangle.NO_BORDER);
         sCodeLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
         shipStateTable.addCell(sCodeLabel);
         
         shippedTo.addElement(shipStateTable);
-
         shippedTo.addElement(new Paragraph("GST NO: " + clientGst, FONT_BOLD));
         addressGrid.addCell(shippedTo);
 
         document.add(addressGrid);
 
-        // --- 4. ITEMS TABLE (Existing Logic) ---
+        // --- 4. ITEMS TABLE ---
         float[] itemColWidths = {0.8f, 5, 1.5f, 1, 1, 1, 2, 2.5f, 2, 2.5f};
         PdfPTable itemTable = new PdfPTable(itemColWidths);
         itemTable.setWidthPercentage(100);
@@ -265,12 +258,13 @@ public class PdfServiceImpl implements PdfService {
         itemTable.addCell(createRightCell(String.format("%.2f", subTotal + totalTax)));
         document.add(itemTable);
 
-        // --- 5. FOOTER (Grid Layout) ---
+        // --- 5. FOOTER ---
         PdfPTable footerTable = new PdfPTable(2);
         footerTable.setWidthPercentage(100);
         footerTable.setWidths(new float[]{3, 1}); 
 
-        PdfPCell cellRupees = new PdfPCell(new Phrase("Rupees: " + NumberToWords.convertToIndianCurrency(invoice.getTotal()), FONT_BOLD));
+        // Words Conversion
+        PdfPCell cellRupees = new PdfPCell(new Phrase("Rupees: " + NumberToWords.convert(invoice.getTotal()), FONT_BOLD));
         cellRupees.setBorder(Rectangle.BOX);
         cellRupees.setPadding(5);
         footerTable.addCell(cellRupees);
@@ -349,7 +343,8 @@ public class PdfServiceImpl implements PdfService {
     }
     private PdfPCell createEmptyCell() {
         PdfPCell c = new PdfPCell(new Phrase(" ", FONT_NORMAL));
-        c.setMinimumHeight(15);
+        // 👇 3. SLIGHTLY COMPACT EMPTY ROWS (Helps avoid page 2)
+        c.setMinimumHeight(12); 
         return c;
     }
 }

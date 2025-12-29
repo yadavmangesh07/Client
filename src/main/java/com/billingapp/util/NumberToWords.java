@@ -1,59 +1,50 @@
 package com.billingapp.util;
 
-//import java.text.DecimalFormat;
-
 public class NumberToWords {
 
-    // private static final String[] units = {
-    //         "", " One", " Two", " Three", " Four", " Five", " Six", " Seven", " Eight", " Nine"
-    // };
-    // private static final String[] teen = {
-    //         " Ten", " Eleven", " Twelve", " Thirteen", " Fourteen", " Fifteen", " Sixteen", " Seventeen", " Eighteen", " Nineteen"
-    // };
-    // private static final String[] tens = {
-    //         "", " Ten", " Twenty", " Thirty", " Forty", " Fifty", " Sixty", " Seventy", " Eighty", " Ninety"
-    // };
-    // private static final String[] thousands = {
-    //         "", " Thousand", " Lakh", " Crore"
-    // };
+    private static final String[] units = {
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+        "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"
+    };
 
-    // Main entry point
+    private static final String[] tens = {
+        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"
+    };
+
     public static String convert(double n) {
-        return convertToIndianCurrency(n);
+        long num = Math.round(n);
+        if (num == 0) {
+            return "Zero Only";
+        }
+        return convertToIndianCurrency(num) + " Only";
     }
 
-    // Updated to accept 'double' to fix the error
-    public static String convertToIndianCurrency(double num) {
-        // Round to nearest integer for words conversion
-        long n = Math.round(num);
-        
-        long limit = 1000000000000L, curr_hun, t = 0;
-        
-        if (n == 0) return ("Zero");
-        
-        String multiplier[] = { "", "Trillion", "Billion", "Million", "Thousand" };
-        String first_twenty[] = { "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
-            "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen" };
-        String tens[] = { "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety" };
-
-        if (n < 20) return (first_twenty[(int) n]);
-        
-        String answer = "";
-        for (long i = n; i > 0; i %= limit, limit /= 1000) {
-            curr_hun = i / limit;
-            while (curr_hun == 0) {
-                i %= limit;
-                limit /= 1000;
-                curr_hun = i / limit;
-                if (limit == 0) break;
-            }
-            if (curr_hun > 99) answer += (first_twenty[(int) curr_hun / 100] + " Hundred ");
-            curr_hun %= 100;
-            if (curr_hun > 0 && curr_hun < 20) answer += (first_twenty[(int) curr_hun] + " ");
-            else if (curr_hun % 10 == 0 && curr_hun != 0) answer += (tens[(int) curr_hun / 10 - 1] + " ");
-            else if (curr_hun > 20 && curr_hun < 100) answer += (tens[(int) curr_hun / 10 - 1] + " " + first_twenty[(int) curr_hun % 10] + " ");
-            if (t < 4) answer += (multiplier[(int) ++t] + " ");
+    private static String convertToIndianCurrency(long n) {
+        if (n < 0) {
+            return "Minus " + convertToIndianCurrency(-n);
         }
-        return (answer + "Only");
+        
+        if (n < 20) {
+            return units[(int) n];
+        }
+        
+        if (n < 100) {
+            return tens[(int) n / 10] + ((n % 10 != 0) ? " " + units[(int) n % 10] : "");
+        }
+        
+        if (n < 1000) {
+            return units[(int) n / 100] + " Hundred" + ((n % 100 != 0) ? " " + convertToIndianCurrency(n % 100) : "");
+        }
+        
+        if (n < 100000) { // Limit for Thousands (1 Lakh)
+            return convertToIndianCurrency(n / 1000) + " Thousand" + ((n % 1000 != 0) ? " " + convertToIndianCurrency(n % 1000) : "");
+        }
+        
+        if (n < 10000000) { // Limit for Lakhs (1 Crore)
+            return convertToIndianCurrency(n / 100000) + " Lakh" + ((n % 100000 != 0) ? " " + convertToIndianCurrency(n % 100000) : "");
+        }
+        
+        // Crores and above
+        return convertToIndianCurrency(n / 10000000) + " Crore" + ((n % 10000000 != 0) ? " " + convertToIndianCurrency(n % 10000000) : "");
     }
 }
