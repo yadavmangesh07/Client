@@ -48,7 +48,7 @@ public class ClientController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.notFound().build();
         }
-    }
+    }  
 
     @GetMapping("/search")
 public ResponseEntity<Page<ClientDTO>> searchClients(
