@@ -33,4 +33,5 @@ public class Client {
     private String gstin;      // Client's Tax Number
     private String state;      // e.g. Gujarat
     private String stateCode;  // e.g. 24
+
 }

@@ -41,4 +41,5 @@ public class Company {
     // Branding (URLs from StorageService)
     private String logoUrl;
     private String signatureUrl;
+
 }
