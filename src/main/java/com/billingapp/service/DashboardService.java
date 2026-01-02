@@ -5,9 +5,11 @@ import com.billingapp.repository.ClientRepository;
 import com.billingapp.repository.InvoiceRepository;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 public class DashboardService {
@@ -21,34 +23,98 @@ public class DashboardService {
     }
 
     public Map<String, Object> getDashboardStats() {
+        // 1. Define all tasks to run in PARALLEL
+        
+        // Task A: Total Revenue
+        CompletableFuture<Double> revenueTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.sumTotalAmount()
+        );
+
+        // Task B: Unpaid Amount
+        CompletableFuture<Double> unpaidTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.sumTotalByStatus("UNPAID")
+        );
+        
+        // Task C: Pending Amount
+        CompletableFuture<Double> pendingTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.sumTotalByStatus("PENDING")
+        );
+
+        // Task D: Invoice Count
+        CompletableFuture<Long> invoiceCountTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.count()
+        );
+
+        // Task E: Client Count
+        CompletableFuture<Long> clientCountTask = CompletableFuture.supplyAsync(() -> 
+            clientRepository.count()
+        );
+
+        // Task F: Recent Invoices (Top 5)
+        CompletableFuture<List<Invoice>> recentTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.findTop5ByOrderByCreatedAtDesc()
+        );
+
+        // Task G: Chart Data (Fetch All)
+        // Note: For massive scale (10k+), we should move this logic to MongoDB Aggregation
+        CompletableFuture<List<Invoice>> allInvoicesTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.findAll()
+        );
+
+        // 2. Wait for all tasks to finish
+        CompletableFuture.allOf(
+            revenueTask, unpaidTask, pendingTask, invoiceCountTask, 
+            clientCountTask, recentTask, allInvoicesTask
+        ).join();
+
+        // 3. Assemble the Response
         Map<String, Object> stats = new HashMap<>();
 
-        // 1. REVENUE (Database Calculation)
-        // Handle null in case there are no invoices yet
-        Double totalRevenue = invoiceRepository.sumTotalAmount();
-        stats.put("totalRevenue", totalRevenue != null ? totalRevenue : 0.0);
+        try {
+            Double revenue = revenueTask.get();
+            stats.put("totalRevenue", revenue != null ? revenue : 0.0);
 
-        // 2. PENDING AMOUNT (Database Calculation)
-        // Using "UNPAID" based on your screenshots. 
-        // If you use "PENDING" as well, you can sum both: sumTotalByStatus("UNPAID") + sumTotalByStatus("PENDING")
-        Double unpaid = invoiceRepository.sumTotalByStatus("UNPAID");
-        stats.put("pendingAmount", unpaid != null ? unpaid : 0.0);
-        
-        // 3. COUNTS (Efficient DB Count)
-        stats.put("totalInvoices", invoiceRepository.count());
-        stats.put("totalClients", clientRepository.count());
-        
-        // Count specific statuses for the UI badges if needed
-        stats.put("paidInvoices", invoiceRepository.countByStatus("PAID"));
-        stats.put("pendingInvoices", invoiceRepository.countByStatus("UNPAID"));
+            Double unpaid = unpaidTask.get();
+            Double pending = pendingTask.get();
+            stats.put("pendingAmount", (unpaid != null ? unpaid : 0.0) + (pending != null ? pending : 0.0));
 
-        // 4. RECENT ACTIVITY (Top 5 only)
-        List<Invoice> recentInvoices = invoiceRepository.findTop5ByOrderByCreatedAtDesc();
-        stats.put("recentInvoices", recentInvoices);
-        
-        // 5. Monthly Stats Placeholder (Can implement aggregation later)
-        stats.put("monthlyStats", List.of());
+            stats.put("totalInvoices", invoiceCountTask.get());
+            stats.put("totalClients", clientCountTask.get());
+            stats.put("recentInvoices", recentTask.get());
+            stats.put("monthlyStats", calculateMonthlyStats(allInvoicesTask.get()));
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new RuntimeException("Error fetching dashboard stats");
+        }
 
         return stats;
+    }
+
+    // --- Helper Method (Same as before) ---
+    private List<Map<String, Object>> calculateMonthlyStats(List<Invoice> invoices) {
+        Map<String, Double> tempMap = new LinkedHashMap<>();
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM");
+
+        invoices.sort(Comparator.comparing(Invoice::getIssuedAt));
+
+        for (Invoice inv : invoices) {
+            if (inv.getIssuedAt() != null) {
+                try {
+                    LocalDate date = inv.getIssuedAt().atZone(ZoneId.systemDefault()).toLocalDate();
+                    String monthName = date.format(formatter);
+                    tempMap.put(monthName, tempMap.getOrDefault(monthName, 0.0) + inv.getTotal());
+                } catch (Exception ignored) {}
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<String, Double> entry : tempMap.entrySet()) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("month", entry.getKey());
+            item.put("amount", entry.getValue());
+            result.add(item);
+        }
+        return result;
     }
 }
