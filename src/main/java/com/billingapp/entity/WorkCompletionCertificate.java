@@ -17,6 +17,7 @@ public class WorkCompletionCertificate {
     private String poNo;
     private String poDate;
     private String gstin;
+    private String clientId;
     
     // Using a simple inner static class for items since they are nested
     private List<WCCItem> items;
@@ -64,6 +65,9 @@ public class WorkCompletionCertificate {
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+
+    public String getClientId() { return clientId; }
+    public void setClientId(String clientId) { this.clientId = clientId; }
 
     // Inner Class for Items
     public static class WCCItem {

@@ -28,12 +28,11 @@ import java.util.stream.Collectors;
 public class ClientServiceImpl implements ClientService {
 
     private final ClientRepository clientRepository;
-    private final InvoiceRepository invoiceRepository;       // 👈 Added
-    private final WorkCompletionCertificateRepository wccRepository; // 👈 Added
+    private final InvoiceRepository invoiceRepository;
+    private final WorkCompletionCertificateRepository wccRepository;
     private final ClientMapper mapper;
     private final MongoTemplate mongoTemplate;
 
-    // Updated Constructor with new repositories
     public ClientServiceImpl(ClientRepository clientRepository,
                              InvoiceRepository invoiceRepository,
                              WorkCompletionCertificateRepository wccRepository,
@@ -46,6 +45,7 @@ public class ClientServiceImpl implements ClientService {
         this.mongoTemplate = mongoTemplate;
     }
 
+    // ... (create, update, getById, delete, getAll remain the same) ...
     @Override
     public ClientDTO create(CreateClientRequest req) {
         Client client = Client.builder()
@@ -93,10 +93,10 @@ public class ClientServiceImpl implements ClientService {
         return mapper.toDto(client);
     }
 
-    // 👇 NEW: Optimized Profile Endpoint Implementation
+    // 👇 UPDATED: Smart Lookup (ID first, then Name fallback)
     @Override
     public ClientProfileDTO getClientProfile(String clientId) {
-        // 1. Fetch Client Basic Details (Fast & Required first for the name lookup)
+        // 1. Fetch Client Basic Details
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + clientId));
 
@@ -107,11 +107,17 @@ public class ClientServiceImpl implements ClientService {
             invoiceRepository.findByClientId(clientId)
         );
 
-        // Task B: Fetch WCCs by Client Name (Store Name)
-        // Using the name from the fetched client to ensure accuracy
-        CompletableFuture<List<WorkCompletionCertificate>> wccTask = CompletableFuture.supplyAsync(() -> 
-            wccRepository.findByStoreNameIgnoreCase(client.getName())
-        );
+        // Task B: Fetch WCCs (Smart Strategy)
+        CompletableFuture<List<WorkCompletionCertificate>> wccTask = CompletableFuture.supplyAsync(() -> {
+            // 2a. Try finding by Client ID (Robust, New Way)
+            List<WorkCompletionCertificate> byId = wccRepository.findByClientId(clientId);
+            if (byId != null && !byId.isEmpty()) {
+                return byId;
+            }
+            
+            // 2b. Fallback: Find by Store Name (Legacy Way for old records)
+            return wccRepository.findByStoreNameIgnoreCase(client.getName());
+        });
 
         // 3. Wait for all tasks to complete
         CompletableFuture.allOf(invoicesTask, wccTask).join();
@@ -172,9 +178,6 @@ public class ClientServiceImpl implements ClientService {
         clientRepository.deleteById(id);
     }
 
-    // --------------------------
-    // Optimized Search Implementation
-    // --------------------------
     @Override
     public Page<ClientDTO> search(String q, int page, int size, String sort) {
         if (page < 0) page = 0;
@@ -183,7 +186,7 @@ public class ClientServiceImpl implements ClientService {
         Sort s = parseSort(sort, Sort.by(Sort.Direction.DESC, "createdAt"));
         Pageable pageable = PageRequest.of(page, size, s);
 
-        Query query = new Query(); // 1. Build Base Query
+        Query query = new Query(); 
 
         if (q != null && !q.isBlank()) {
             String regex = ".*" + q.trim() + ".*";
@@ -194,13 +197,9 @@ public class ClientServiceImpl implements ClientService {
             query.addCriteria(criteria);
         }
 
-        // 2. Count Total (Before adding pagination)
         long total = mongoTemplate.count(query, Client.class);
-
-        // 3. Apply Pagination & Sort
         query.with(pageable);
 
-        // 4. Fetch Data
         List<Client> list = mongoTemplate.find(query, Client.class);
         List<ClientDTO> dtos = list.stream().map(mapper::toDto).collect(Collectors.toList());
         

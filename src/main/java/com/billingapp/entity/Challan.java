@@ -4,6 +4,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.Date;
 import java.util.List;
+import java.time.Instant; // 👈 Import Instant
 
 @Document(collection = "challans")
 public class Challan {
@@ -25,6 +26,10 @@ public class Challan {
     private String contactPerson; // e.g., Location: NYKAA LUXE...
 
     private List<ChallanItem> items;
+
+    // 👇 NEW: Audit Fields required for sorting/filtering
+    private Instant createdAt;
+    private Instant updatedAt;
 
     // Getters and Setters
     public String getId() { return id; }
@@ -51,6 +56,12 @@ public class Challan {
     public void setContactPerson(String contactPerson) { this.contactPerson = contactPerson; }
     public List<ChallanItem> getItems() { return items; }
     public void setItems(List<ChallanItem> items) { this.items = items; }
+
+    // 👇 NEW: Getters and Setters for Audit Fields
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
 
     // Nested Item Class
     public static class ChallanItem {

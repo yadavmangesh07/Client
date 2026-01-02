@@ -10,12 +10,15 @@ import java.util.Optional;
 @Repository
 public interface WorkCompletionCertificateRepository extends MongoRepository<WorkCompletionCertificate, String> {
     
+    // 👇 NEW: Find by Client ID (Robust Link)
+    List<WorkCompletionCertificate> findByClientId(String clientId);
+
     // Existing fuzzy search
     List<WorkCompletionCertificate> findByStoreNameContainingIgnoreCase(String storeName);
     
     // Existing top finder
     Optional<WorkCompletionCertificate> findTopByOrderByCreatedAtDesc();
 
-    // 👇 NEW: Find by exact name (ignoring case) for the Profile Page correlation
+    // Existing exact name finder (Fallback)
     List<WorkCompletionCertificate> findByStoreNameIgnoreCase(String storeName);
 }
