@@ -1,8 +1,9 @@
 package com.billingapp.service;
 
 import com.billingapp.dto.ClientDTO;
+import com.billingapp.dto.ClientProfileDTO; // 👈 Make sure to import this
 import com.billingapp.dto.CreateClientRequest;
-//import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Page;
 
 import java.util.List;
 
@@ -13,6 +14,8 @@ public interface ClientService {
     ClientDTO update(String id, CreateClientRequest req);
     void delete(String id);
 
-    // new:
-    org.springframework.data.domain.Page<ClientDTO> search(String q, int page, int size, String sort);
+    Page<ClientDTO> search(String q, int page, int size, String sort);
+
+    // 👇 NEW: Optimized Profile Endpoint
+    ClientProfileDTO getClientProfile(String id);
 }

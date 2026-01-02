@@ -1,10 +1,15 @@
 package com.billingapp.service.impl;
 
 import com.billingapp.dto.ClientDTO;
+import com.billingapp.dto.ClientProfileDTO;
 import com.billingapp.dto.CreateClientRequest;
 import com.billingapp.entity.Client;
+import com.billingapp.entity.Invoice;
+import com.billingapp.entity.WorkCompletionCertificate;
 import com.billingapp.mapper.ClientMapper;
 import com.billingapp.repository.ClientRepository;
+import com.billingapp.repository.InvoiceRepository;
+import com.billingapp.repository.WorkCompletionCertificateRepository;
 import com.billingapp.service.ClientService;
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
@@ -14,7 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.List;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,11 +28,20 @@ import java.util.stream.Collectors;
 public class ClientServiceImpl implements ClientService {
 
     private final ClientRepository clientRepository;
+    private final InvoiceRepository invoiceRepository;       // 👈 Added
+    private final WorkCompletionCertificateRepository wccRepository; // 👈 Added
     private final ClientMapper mapper;
     private final MongoTemplate mongoTemplate;
 
-    public ClientServiceImpl(ClientRepository clientRepository, ClientMapper mapper, MongoTemplate mongoTemplate) {
+    // Updated Constructor with new repositories
+    public ClientServiceImpl(ClientRepository clientRepository,
+                             InvoiceRepository invoiceRepository,
+                             WorkCompletionCertificateRepository wccRepository,
+                             ClientMapper mapper,
+                             MongoTemplate mongoTemplate) {
         this.clientRepository = clientRepository;
+        this.invoiceRepository = invoiceRepository;
+        this.wccRepository = wccRepository;
         this.mapper = mapper;
         this.mongoTemplate = mongoTemplate;
     }
@@ -38,7 +53,7 @@ public class ClientServiceImpl implements ClientService {
                 .email(req.getEmail())
                 .phone(req.getPhone())
                 .address(req.getAddress())
-                .gstin(req.getGstin()) // 👈 Mapping gstNo (DTO) -> gstin (Entity)
+                .gstin(req.getGstin())
                 .notes(req.getNotes())
                 .state(req.getState())
                 .stateCode(req.getStateCode())
@@ -60,7 +75,7 @@ public class ClientServiceImpl implements ClientService {
         client.setEmail(req.getEmail());
         client.setPhone(req.getPhone());
         client.setAddress(req.getAddress());
-        client.setGstin(req.getGstin()); // 👈 Update GSTIN
+        client.setGstin(req.getGstin());
         client.setNotes(req.getNotes());
         client.setState(req.getState());
         client.setStateCode(req.getStateCode());
@@ -76,6 +91,73 @@ public class ClientServiceImpl implements ClientService {
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
         return mapper.toDto(client);
+    }
+
+    // 👇 NEW: Optimized Profile Endpoint Implementation
+    @Override
+    public ClientProfileDTO getClientProfile(String clientId) {
+        // 1. Fetch Client Basic Details (Fast & Required first for the name lookup)
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + clientId));
+
+        // 2. Define Parallel Tasks
+        
+        // Task A: Fetch Invoices by Client ID
+        CompletableFuture<List<Invoice>> invoicesTask = CompletableFuture.supplyAsync(() -> 
+            invoiceRepository.findByClientId(clientId)
+        );
+
+        // Task B: Fetch WCCs by Client Name (Store Name)
+        // Using the name from the fetched client to ensure accuracy
+        CompletableFuture<List<WorkCompletionCertificate>> wccTask = CompletableFuture.supplyAsync(() -> 
+            wccRepository.findByStoreNameIgnoreCase(client.getName())
+        );
+
+        // 3. Wait for all tasks to complete
+        CompletableFuture.allOf(invoicesTask, wccTask).join();
+
+        // 4. Aggregate Results
+        ClientProfileDTO dto = new ClientProfileDTO();
+        dto.setClient(client);
+
+        try {
+            List<Invoice> invoices = invoicesTask.get();
+            List<WorkCompletionCertificate> wccs = wccTask.get();
+
+            // Set Recent Invoices (Sorted by Date DESC, Limit 10)
+            if (invoices != null) {
+                invoices.sort(Comparator.comparing(Invoice::getIssuedAt).reversed());
+                dto.setRecentInvoices(invoices.stream().limit(10).collect(Collectors.toList()));
+            } else {
+                dto.setRecentInvoices(Collections.emptyList());
+                invoices = Collections.emptyList();
+            }
+
+            // Set WCCs
+            dto.setRecentCertificates(wccs != null ? wccs : Collections.emptyList());
+
+            // Calculate Stats
+            double totalBilled = invoices.stream().mapToDouble(Invoice::getTotal).sum();
+            
+            // Calculate Pending
+            double pending = invoices.stream()
+                    .filter(inv -> "PENDING".equalsIgnoreCase(inv.getStatus()) || "UNPAID".equalsIgnoreCase(inv.getStatus()))
+                    .mapToDouble(Invoice::getTotal)
+                    .sum();
+
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("totalBilled", totalBilled);
+            stats.put("pendingAmount", pending);
+            stats.put("invoiceCount", invoices.size());
+            stats.put("wccCount", wccs != null ? wccs.size() : 0);
+
+            dto.setStats(stats);
+
+        } catch (Exception e) {
+            throw new RuntimeException("Error assembling client profile", e);
+        }
+
+        return dto;
     }
 
     @Override

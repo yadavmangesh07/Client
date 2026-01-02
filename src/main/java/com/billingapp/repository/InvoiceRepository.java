@@ -25,15 +25,18 @@ public interface InvoiceRepository extends MongoRepository<Invoice, String> {
     // 3. Sum total amount of ALL invoices (Total Revenue)
     // Uses MongoDB Aggregation to sum the 'total' field of all documents
     @Aggregation(pipeline = {
-        "{ '$group': { '_id': null, 'total': { '$sum': '$total' } } }"
+            "{ '$group': { '_id': null, 'total': { '$sum': '$total' } } }"
     })
     Double sumTotalAmount();
 
     // 4. Sum total amount based on Status (e.g., Total "PENDING" Amount)
     // Filters by status first, then sums the total
     @Aggregation(pipeline = {
-        "{ '$match': { 'status': ?0 } }",
-        "{ '$group': { '_id': null, 'total': { '$sum': '$total' } } }"
+            "{ '$match': { 'status': ?0 } }",
+            "{ '$group': { '_id': null, 'total': { '$sum': '$total' } } }"
     })
     Double sumTotalByStatus(String status);
+
+    // Add this if missing
+    List<Invoice> findByClientId(String clientId);
 }

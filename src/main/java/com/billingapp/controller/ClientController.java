@@ -1,6 +1,7 @@
 package com.billingapp.controller;
 
 import com.billingapp.dto.ClientDTO;
+import com.billingapp.dto.ClientProfileDTO; // 👈 Added Import
 import com.billingapp.dto.CreateClientRequest;
 import com.billingapp.service.ClientService;
 import jakarta.validation.Valid;
@@ -12,6 +13,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/clients")
+@CrossOrigin(origins = "*") // 👈 Added to allow React to communicate with Spring Boot
 public class ClientController {
 
     private final ClientService service;
@@ -40,6 +42,12 @@ public class ClientController {
         }
     }
 
+    // 👇 NEW: Optimized Profile Endpoint
+    @GetMapping("/{id}/profile")
+    public ResponseEntity<ClientProfileDTO> getClientProfile(@PathVariable String id) {
+        return ResponseEntity.ok(service.getClientProfile(id));
+    }
+
     @PutMapping("/{id}")
     public ResponseEntity<ClientDTO> update(@PathVariable String id,
                                             @Valid @RequestBody CreateClientRequest req) {
@@ -51,15 +59,15 @@ public class ClientController {
     }  
 
     @GetMapping("/search")
-public ResponseEntity<Page<ClientDTO>> searchClients(
-        @RequestParam(value = "q", required = false) String q,
-        @RequestParam(value = "page", defaultValue = "0") int page,
-        @RequestParam(value = "size", defaultValue = "10") int size,
-        @RequestParam(value = "sort", required = false) String sort
-) {
-    Page<ClientDTO> result = service.search(q, page, size, sort);
-    return ResponseEntity.ok(result);
-}
+    public ResponseEntity<Page<ClientDTO>> searchClients(
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "sort", required = false) String sort
+    ) {
+        Page<ClientDTO> result = service.search(q, page, size, sort);
+        return ResponseEntity.ok(result);
+    }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(@PathVariable String id) {

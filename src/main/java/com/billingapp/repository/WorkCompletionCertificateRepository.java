@@ -9,7 +9,13 @@ import java.util.Optional;
 
 @Repository
 public interface WorkCompletionCertificateRepository extends MongoRepository<WorkCompletionCertificate, String> {
-    // We can add custom finders here if needed, e.g., by client name
+    
+    // Existing fuzzy search
     List<WorkCompletionCertificate> findByStoreNameContainingIgnoreCase(String storeName);
+    
+    // Existing top finder
     Optional<WorkCompletionCertificate> findTopByOrderByCreatedAtDesc();
+
+    // 👇 NEW: Find by exact name (ignoring case) for the Profile Page correlation
+    List<WorkCompletionCertificate> findByStoreNameIgnoreCase(String storeName);
 }
