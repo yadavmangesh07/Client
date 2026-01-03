@@ -55,7 +55,7 @@ public class PdfServiceImpl implements PdfService {
         String clientGst = client.getGstin() != null ? client.getGstin() : "-";
         
         String clientState = client.getState() != null ? client.getState() : "-";
-        String clientStateCode = client.getStateCode() != null ? client.getStateCode() : "-";
+        String clientStateCode = client.getStateCode() != null ? client.getStateCode() : "27";
 
         // Fetch Company Data
         Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
@@ -71,7 +71,6 @@ public class PdfServiceImpl implements PdfService {
             company.setBranch("Jawahar Nagar Mumbai");
         }
 
-        // 👇 1. REDUCED MARGINS (Top/Bottom 15 instead of 20)
         Document document = new Document(PageSize.A4, 20, 20, 15, 15);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, out);
@@ -102,7 +101,6 @@ public class PdfServiceImpl implements PdfService {
                 if (logoResource != null) img = Image.getInstance(logoResource);
             }
             if (img != null) {
-                // 👇 2. SMALLER LOGO (Fits better in header)
                 img.scaleToFit(100, 50); 
                 img.setAlignment(Element.ALIGN_RIGHT);
                 logoCell.addElement(img);
@@ -143,7 +141,6 @@ public class PdfServiceImpl implements PdfService {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd-MM-yyyy").withZone(ZoneId.systemDefault());
         String dateStr = invoice.getIssuedAt() != null ? dtf.format(invoice.getIssuedAt()) : "-";
         
-        // Seller Details
         rightGrid.addCell(createLabelValueCell("Bill No :", invoice.getInvoiceNo()));
         rightGrid.addCell(createLabelValueCell("Date :", dateStr));
         rightGrid.addCell(createLabelValueCell("Challan No.", invoice.getChallanNo()));
@@ -163,58 +160,27 @@ public class PdfServiceImpl implements PdfService {
         // --- 3. CLIENT DETAILS ---
         PdfPTable addressGrid = new PdfPTable(2);
         addressGrid.setWidthPercentage(100);
-        
-        // --- BILLED TO ---
-        PdfPCell billedTo = new PdfPCell();
-        billedTo.setPadding(5);
-        billedTo.addElement(new Paragraph("BILLED TO", FONT_RED_BOLD)); 
-        billedTo.addElement(new Paragraph(clientName, FONT_BOLD)); 
-        billedTo.addElement(new Paragraph(invoice.getBillingAddress(), FONT_NORMAL));
-        
-        PdfPTable billStateTable = new PdfPTable(2);
-        billStateTable.setWidthPercentage(100);
-        billStateTable.setWidths(new float[]{1, 1});
-        PdfPCell stateLabel = new PdfPCell(new Phrase("State: " + clientState, FONT_BOLD));
-        stateLabel.setBorder(Rectangle.NO_BORDER);
-        billStateTable.addCell(stateLabel);
-        PdfPCell codeLabel = new PdfPCell(new Phrase("State Code: " + clientStateCode, FONT_BOLD));
-        codeLabel.setBorder(Rectangle.NO_BORDER);
-        codeLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        billStateTable.addCell(codeLabel);
-        
-        billedTo.addElement(billStateTable);
-        billedTo.addElement(new Paragraph("GST NO: " + clientGst, FONT_BOLD));
-        addressGrid.addCell(billedTo);
+        addressGrid.setSpacingBefore(0);
 
-        // --- SHIPPED TO ---
-        PdfPCell shippedTo = new PdfPCell();
-        shippedTo.setPadding(5);
-        shippedTo.addElement(new Paragraph("SHIPPED TO", FONT_RED_BOLD)); 
-        shippedTo.addElement(new Paragraph(clientName, FONT_BOLD));
-        shippedTo.addElement(new Paragraph(invoice.getShippingAddress() != null ? invoice.getShippingAddress() : invoice.getBillingAddress(), FONT_NORMAL));
-        
-        PdfPTable shipStateTable = new PdfPTable(2);
-        shipStateTable.setWidthPercentage(100);
-        shipStateTable.setWidths(new float[]{1, 1});
-        PdfPCell sStateLabel = new PdfPCell(new Phrase("State: " + clientState, FONT_BOLD));
-        sStateLabel.setBorder(Rectangle.NO_BORDER);
-        shipStateTable.addCell(sStateLabel);
-        PdfPCell sCodeLabel = new PdfPCell(new Phrase("State Code: " + clientStateCode, FONT_BOLD));
-        sCodeLabel.setBorder(Rectangle.NO_BORDER);
-        sCodeLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        shipStateTable.addCell(sCodeLabel);
-        
-        shippedTo.addElement(shipStateTable);
-        shippedTo.addElement(new Paragraph("GST NO: " + clientGst, FONT_BOLD));
-        addressGrid.addCell(shippedTo);
+        String shippingAddr = invoice.getShippingAddress() != null && !invoice.getShippingAddress().isEmpty() 
+            ? invoice.getShippingAddress() 
+            : invoice.getBillingAddress();
+
+        addressGrid.addCell(createClientCell("BILLED TO", clientName, invoice.getBillingAddress(), clientState, clientStateCode, clientGst));
+        addressGrid.addCell(createClientCell("SHIPPED TO", clientName, shippingAddr, clientState, clientStateCode, clientGst));
 
         document.add(addressGrid);
 
-        // --- 4. ITEMS TABLE ---
-        float[] itemColWidths = {0.8f, 5, 1.5f, 1, 1, 1, 2, 2.5f, 2, 2.5f};
+        // --- 4. ITEMS TABLE (WIDTHS FIXED HERE) ---
+        // 👇 INCREASED UOM width (4th val) from 1 to 1.3
+        // 👇 DECREASED Description width (2nd val) slightly from 5 to 4.7 to balance
+        float[] itemColWidths = {0.8f, 4.7f, 1.5f, 1.3f, 1, 1, 2, 2.5f, 2, 2.5f};
+        
         PdfPTable itemTable = new PdfPTable(itemColWidths);
         itemTable.setWidthPercentage(100);
         itemTable.setHeaderRows(1);
+        itemTable.setSpacingBefore(0);
+        
         String[] headers = {"Sr No", "Description", "HSN", "UOM", "Unit", "Qty", "Rate", "Amount", "GST%", "Total"};
         for (String h : headers) {
             PdfPCell c = new PdfPCell(new Phrase(h, FONT_BOLD));
@@ -263,7 +229,6 @@ public class PdfServiceImpl implements PdfService {
         footerTable.setWidthPercentage(100);
         footerTable.setWidths(new float[]{3, 1}); 
 
-        // Words Conversion
         PdfPCell cellRupees = new PdfPCell(new Phrase("Rupees: " + NumberToWords.convert(invoice.getTotal()), FONT_BOLD));
         cellRupees.setBorder(Rectangle.BOX);
         cellRupees.setPadding(5);
@@ -313,7 +278,53 @@ public class PdfServiceImpl implements PdfService {
         return out.toByteArray();
     }
 
-    // Helpers
+    // --- HELPER: CREATE CLIENT CELL (Fixed widths for State Code) ---
+    private PdfPCell createClientCell(String title, String name, String address, String state, String code, String gst) {
+        PdfPCell parent = new PdfPCell();
+        parent.setBorder(Rectangle.BOX);
+        parent.setPadding(0);
+
+        PdfPTable nested = new PdfPTable(2);
+        nested.setWidthPercentage(100);
+        // 👇 UPDATED: Changed from {3, 1} to {1.5f, 1} (approx 60% / 40%)
+        // This gives "State Code" much more room to breathe.
+        try { nested.setWidths(new float[]{1.5f, 1}); } catch (Exception e) {}
+
+        // Row 1: Address
+        PdfPCell addressCell = new PdfPCell();
+        addressCell.setColspan(2);
+        addressCell.setBorder(Rectangle.NO_BORDER);
+        addressCell.setPadding(5);
+        addressCell.addElement(new Paragraph(title, FONT_RED_BOLD)); 
+        addressCell.addElement(new Paragraph(name, FONT_BOLD)); 
+        addressCell.addElement(new Paragraph(address, FONT_NORMAL));
+        addressCell.addElement(Chunk.NEWLINE); 
+        nested.addCell(addressCell);
+
+        // Row 2: State | Code
+        PdfPCell stateCell = new PdfPCell(new Phrase("State: " + state, FONT_BOLD));
+        stateCell.setBorder(Rectangle.TOP | Rectangle.RIGHT); 
+        stateCell.setPadding(5);
+        nested.addCell(stateCell);
+
+        PdfPCell codeCell = new PdfPCell(new Phrase("State Code: " + code, FONT_BOLD));
+        codeCell.setBorder(Rectangle.TOP); 
+        codeCell.setPadding(5);
+        codeCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        nested.addCell(codeCell);
+
+        // Row 3: GST NO
+        PdfPCell gstCell = new PdfPCell(new Phrase("GST NO: " + gst, FONT_BOLD));
+        gstCell.setColspan(2);
+        gstCell.setBorder(Rectangle.TOP); 
+        gstCell.setPadding(5);
+        nested.addCell(gstCell);
+
+        parent.addElement(nested);
+        return parent;
+    }
+
+    // Existing Helpers
     private PdfPCell createLabelValueCell(String label, String value) {
         PdfPCell cell = new PdfPCell();
         cell.setPadding(3);
@@ -343,7 +354,6 @@ public class PdfServiceImpl implements PdfService {
     }
     private PdfPCell createEmptyCell() {
         PdfPCell c = new PdfPCell(new Phrase(" ", FONT_NORMAL));
-        // 👇 3. SLIGHTLY COMPACT EMPTY ROWS (Helps avoid page 2)
         c.setMinimumHeight(12); 
         return c;
     }
