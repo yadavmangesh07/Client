@@ -24,6 +24,7 @@ public class Purchase {
     
     private String notes;           // Optional description
     private String createdBy;
+    private String remarks;
 
     // Constructors, Getters, and Setters
     public Purchase() {}
@@ -50,4 +51,6 @@ public class Purchase {
     public void setStatus(String status) { this.status = status; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getRemarks() { return remarks; }
+    public void setRemarks(String remarks) { this.remarks = remarks; }
 }

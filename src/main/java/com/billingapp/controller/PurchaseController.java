@@ -1,67 +1,67 @@
 package com.billingapp.controller;
 
+import com.billingapp.dto.PurchaseStatsDTO;
 import com.billingapp.entity.Purchase;
-import com.billingapp.repository.PurchaseRepository;
+import com.billingapp.service.PurchaseService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-//import java.time.LocalDate;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/purchases")
-@CrossOrigin(origins = "*") // Allow frontend access
+@CrossOrigin(origins = "*") 
 public class PurchaseController {
 
     @Autowired
-    private PurchaseRepository repository;
+    private PurchaseService service;
 
     @GetMapping
     public List<Purchase> getAllPurchases() {
-        return repository.findAll();
+        return service.getAll();
     }
 
     @PostMapping
     public Purchase createPurchase(@RequestBody Purchase purchase) {
-        // Simple logic to auto-set status if not provided
-        if (purchase.getStatus() == null) {
-            if (purchase.getAmountPaid() != null && purchase.getTotalAmount() != null) {
-                if (purchase.getAmountPaid().compareTo(purchase.getTotalAmount()) >= 0) {
-                    purchase.setStatus("PAID");
-                } else if (purchase.getAmountPaid().doubleValue() > 0) {
-                    purchase.setStatus("PARTIAL");
-                } else {
-                    purchase.setStatus("UNPAID");
-                }
-            }
-        }
-        return repository.save(purchase);
+        return service.save(purchase);
+    }
+
+    @PutMapping("/{id}")
+    public Purchase updatePurchase(@PathVariable String id, @RequestBody Purchase purchase) {
+        purchase.setId(id);
+        return service.save(purchase);
     }
 
     @DeleteMapping("/{id}")
     public void deletePurchase(@PathVariable String id) {
-        repository.deleteById(id);
+        service.delete(id);
     }
-    // 👇 ADD THIS METHOD to handle Updates
-    @PutMapping("/{id}")
-    public Purchase updatePurchase(@PathVariable String id, @RequestBody Purchase purchase) {
-        // 1. Ensure the ID from the URL is set on the object so MongoDB updates it (instead of creating new)
-        purchase.setId(id); 
 
-        // 2. (Optional) Re-validate Status on server side just to be safe
-        if (purchase.getAmountPaid() != null && purchase.getTotalAmount() != null) {
-             double paid = purchase.getAmountPaid().doubleValue();
-             double total = purchase.getTotalAmount().doubleValue();
+    // 👇 NEW ENDPOINT: Get Dashboard Stats
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, PurchaseStatsDTO>> getStats(
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) Integer year
+    ) {
+        // Default to current date if not provided
+        LocalDate now = LocalDate.now();
+        int m = (month != null) ? month : now.getMonthValue();
+        int y = (year != null) ? year : now.getYear();
 
-             if (paid >= total && total > 0) {
-                 purchase.setStatus("Full Paid");
-             } else if (paid > 0) {
-                 purchase.setStatus("Partially Paid");
-             } else {
-                 purchase.setStatus("Unpaid");
-             }
-        }
+        // Calculate Financial Year Start (e.g., if today is Jan 2026, FY started in 2025)
+        int fyStart = (now.getMonthValue() >= 4) ? now.getYear() : now.getYear() - 1;
 
-        return repository.save(purchase);
+        PurchaseStatsDTO monthly = service.getMonthlyStats(m, y);
+        PurchaseStatsDTO yearly = service.getYearlyStats(fyStart);
+
+        Map<String, PurchaseStatsDTO> response = new HashMap<>();
+        response.put("monthly", monthly);
+        response.put("yearly", yearly);
+
+        return ResponseEntity.ok(response);
     }
 }
