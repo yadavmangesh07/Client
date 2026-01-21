@@ -113,13 +113,30 @@ public class PdfServiceImpl implements PdfService {
         headerTable.addCell(logoCell);
         document.add(headerTable);
 
-        Paragraph pTitle = new Paragraph("TAX INVOICE", FONT_BOLD);
-        pTitle.setAlignment(Element.ALIGN_CENTER);
-        document.add(pTitle);
-        Paragraph pOriginal = new Paragraph("Original For Recipient", FONT_SMALL);
-        pOriginal.setAlignment(Element.ALIGN_RIGHT);
-        document.add(pOriginal);
-        document.add(Chunk.NEWLINE);
+        // --- TITLE ROW (Aligned) ---
+        PdfPTable titleRowTable = new PdfPTable(3);
+        titleRowTable.setWidthPercentage(100);
+        titleRowTable.setWidths(new float[]{1, 1, 1}); 
+
+        PdfPCell emptyLeft = new PdfPCell(new Phrase("", FONT_SMALL));
+        emptyLeft.setBorder(Rectangle.NO_BORDER);
+        titleRowTable.addCell(emptyLeft);
+
+        PdfPCell centerTitle = new PdfPCell(new Phrase("TAX INVOICE", FONT_BOLD));
+        centerTitle.setBorder(Rectangle.NO_BORDER);
+        centerTitle.setHorizontalAlignment(Element.ALIGN_CENTER);
+        centerTitle.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        titleRowTable.addCell(centerTitle);
+
+        PdfPCell rightOriginal = new PdfPCell(new Phrase("Original For Recipient", FONT_SMALL));
+        rightOriginal.setBorder(Rectangle.NO_BORDER);
+        rightOriginal.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        rightOriginal.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        titleRowTable.addCell(rightOriginal);
+
+        document.add(titleRowTable);
+        document.add(new Paragraph("\n")); 
+
 
         // --- 2. MAIN DETAILS GRID (Company & Invoice Info) ---
         PdfPTable mainGrid = new PdfPTable(2);
@@ -161,6 +178,9 @@ public class PdfServiceImpl implements PdfService {
         PdfPTable addressGrid = new PdfPTable(2);
         addressGrid.setWidthPercentage(100);
         addressGrid.setSpacingBefore(0);
+        
+        // Exact match of mainGrid {1.2f, 1} for perfect vertical alignment
+        addressGrid.setWidths(new float[]{1.2f, 1}); 
 
         String shippingAddr = invoice.getShippingAddress() != null && !invoice.getShippingAddress().isEmpty() 
             ? invoice.getShippingAddress() 
@@ -171,9 +191,7 @@ public class PdfServiceImpl implements PdfService {
 
         document.add(addressGrid);
 
-        // --- 4. ITEMS TABLE (WIDTHS FIXED HERE) ---
-        // 👇 INCREASED UOM width (4th val) from 1 to 1.3
-        // 👇 DECREASED Description width (2nd val) slightly from 5 to 4.7 to balance
+        // --- 4. ITEMS TABLE ---
         float[] itemColWidths = {0.8f, 4.7f, 1.5f, 1.3f, 1, 1, 2, 2.5f, 2, 2.5f};
         
         PdfPTable itemTable = new PdfPTable(itemColWidths);
@@ -254,13 +272,14 @@ public class PdfServiceImpl implements PdfService {
         cellSignatory.setBorder(Rectangle.BOX);
         cellSignatory.setRowspan(2); 
         cellSignatory.setHorizontalAlignment(Element.ALIGN_CENTER);
-        cellSignatory.setVerticalAlignment(Element.ALIGN_BOTTOM);
+        cellSignatory.setVerticalAlignment(Element.ALIGN_MIDDLE); // Vertically Centered
         cellSignatory.setPadding(5);
         
         Paragraph pSig = new Paragraph();
-        pSig.add(Chunk.NEWLINE); pSig.add(Chunk.NEWLINE);
         pSig.add(new Paragraph("For JMD DÉCOR", FONT_BOLD));
-        pSig.add(Chunk.NEWLINE); pSig.add(Chunk.NEWLINE); pSig.add(Chunk.NEWLINE);
+        pSig.add(Chunk.NEWLINE); 
+        pSig.add(Chunk.NEWLINE); 
+        pSig.add(Chunk.NEWLINE);
         pSig.add(new Paragraph("PROPRIETOR", FONT_BOLD));
         pSig.setAlignment(Element.ALIGN_CENTER);
         cellSignatory.addElement(pSig);
@@ -269,7 +288,13 @@ public class PdfServiceImpl implements PdfService {
         PdfPCell cellDecl = new PdfPCell();
         cellDecl.setBorder(Rectangle.BOX);
         cellDecl.setPadding(5);
-        cellDecl.addElement(new Paragraph("Declaration: We declare that this invoice shows the actual price of the Goods Described and that all particulars are true and correct.", FONT_SMALL));
+        
+        // Formal Declaration
+        Paragraph declP = new Paragraph();
+        declP.add(new Chunk("Declaration: ", FONT_BOLD)); 
+        declP.add(new Chunk("Certified that the particulars given above are true and correct and the amount indicated represents the price actually charged and that there is no flow of additional consideration directly or indirectly from the buyer.", FONT_SMALL));
+        cellDecl.addElement(declP);
+        
         footerTable.addCell(cellDecl);
 
         document.add(footerTable);
@@ -278,7 +303,7 @@ public class PdfServiceImpl implements PdfService {
         return out.toByteArray();
     }
 
-    // --- HELPER: CREATE CLIENT CELL (Fixed widths for State Code) ---
+    // --- HELPER: CREATE CLIENT CELL ---
     private PdfPCell createClientCell(String title, String name, String address, String state, String code, String gst) {
         PdfPCell parent = new PdfPCell();
         parent.setBorder(Rectangle.BOX);
@@ -286,22 +311,27 @@ public class PdfServiceImpl implements PdfService {
 
         PdfPTable nested = new PdfPTable(2);
         nested.setWidthPercentage(100);
-        // 👇 UPDATED: Changed from {3, 1} to {1.5f, 1} (approx 60% / 40%)
-        // This gives "State Code" much more room to breathe.
+        
         try { nested.setWidths(new float[]{1.5f, 1}); } catch (Exception e) {}
 
-        // Row 1: Address
+        // 👇 UPDATED: Row 1 - TITLE ONLY (Separated Row)
+        PdfPCell titleCell = new PdfPCell(new Phrase(title, FONT_RED_BOLD));
+        titleCell.setColspan(2);
+        titleCell.setBorder(Rectangle.BOTTOM); // 👈 Line Separating Title from Address
+        titleCell.setPadding(5);
+        nested.addCell(titleCell);
+
+        // 👇 UPDATED: Row 2 - NAME & ADDRESS (No border between this and title cell due to Rectangle.BOTTOM above)
         PdfPCell addressCell = new PdfPCell();
         addressCell.setColspan(2);
         addressCell.setBorder(Rectangle.NO_BORDER);
         addressCell.setPadding(5);
-        addressCell.addElement(new Paragraph(title, FONT_RED_BOLD)); 
         addressCell.addElement(new Paragraph(name, FONT_BOLD)); 
         addressCell.addElement(new Paragraph(address, FONT_NORMAL));
         addressCell.addElement(Chunk.NEWLINE); 
         nested.addCell(addressCell);
 
-        // Row 2: State | Code
+        // Row 3: State | Code
         PdfPCell stateCell = new PdfPCell(new Phrase("State: " + state, FONT_BOLD));
         stateCell.setBorder(Rectangle.TOP | Rectangle.RIGHT); 
         stateCell.setPadding(5);
@@ -310,10 +340,10 @@ public class PdfServiceImpl implements PdfService {
         PdfPCell codeCell = new PdfPCell(new Phrase("State Code: " + code, FONT_BOLD));
         codeCell.setBorder(Rectangle.TOP); 
         codeCell.setPadding(5);
-        codeCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        codeCell.setHorizontalAlignment(Element.ALIGN_LEFT); // Left Aligned
         nested.addCell(codeCell);
 
-        // Row 3: GST NO
+        // Row 4: GST NO
         PdfPCell gstCell = new PdfPCell(new Phrase("GST NO: " + gst, FONT_BOLD));
         gstCell.setColspan(2);
         gstCell.setBorder(Rectangle.TOP); 
