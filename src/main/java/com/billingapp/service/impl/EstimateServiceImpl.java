@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.net.URL;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -24,12 +25,15 @@ public class EstimateServiceImpl implements EstimateService {
     private final ClientRepository clientRepository;
     private final CompanyRepository companyRepository;
 
-    // Fonts
-    private static final Font FONT_HEADER = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.BLACK);
+    // --- FONTS ---
+    private static final Font FONT_COMPANY_NAME = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12, Color.BLACK);
+    private static final Font FONT_HEADER_RED = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(180, 50, 50));
     private static final Font FONT_BOLD = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.BLACK);
-    private static final Font FONT_NORMAL = FontFactory.getFont(FontFactory.HELVETICA, 9, Color.BLACK);
-    private static final Font FONT_SMALL = FontFactory.getFont(FontFactory.HELVETICA, 8, Color.BLACK);
-    private static final Font FONT_RED = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.RED);
+    private static final Font FONT_NORMAL = FontFactory.getFont(FontFactory.HELVETICA, 8, Color.BLACK);
+    private static final Font FONT_SMALL_BOLD = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 8, Color.BLACK);
+    private static final Font FONT_SIGNATURE_RED = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, new Color(200, 0, 0));
+    private static final Font FONT_BANK_BLUE = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, new Color(0, 50, 150));
+    private static final Font FONT_BOLD_BIG = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16, Color.BLACK);
 
     public EstimateServiceImpl(EstimateRepository estimateRepository, ClientRepository clientRepository, CompanyRepository companyRepository) {
         this.estimateRepository = estimateRepository;
@@ -38,190 +42,182 @@ public class EstimateServiceImpl implements EstimateService {
     }
 
     @Override
-    public List<Estimate> getAllEstimates() {
-        return estimateRepository.findAll();
-    }
+    public List<Estimate> getAllEstimates() { return estimateRepository.findAll(); }
     @Override
-    public Estimate getEstimateById(String id) {
-        return estimateRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Estimate not found with id: " + id));
-    }
+    public Estimate getEstimateById(String id) { return estimateRepository.findById(id).orElseThrow(); }
+    @Override
+    public void deleteEstimate(String id) { estimateRepository.deleteById(id); }
 
     @Override
     public Estimate createEstimate(Estimate estimate) {
-        // Auto-generate Estimate No logic if empty
         if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isEmpty()) {
-            
-            // 1. Calculate Financial Year dynamically
             java.time.LocalDate now = java.time.LocalDate.now();
             int currentYear = now.getYear();
-            int currentMonth = now.getMonthValue(); // 1=Jan, ... 4=April
-            
-            String finYear;
-            if (currentMonth >= 4) {
-                // April onwards (e.g., April 2025 -> "2025-26")
-                finYear = currentYear + "-" + (currentYear + 1 - 2000);
-            } else {
-                // Jan to March (e.g., March 2026 -> "2025-26")
-                finYear = (currentYear - 1) + "-" + (currentYear - 2000);
-            }
-
-            // 2. generate the sequence number
-            // (Ideally, you should count estimates ONLY for this financial year, 
-            // but simply counting all is okay for now to keep it unique)
+            String finYear = (now.getMonthValue() >= 4) ? currentYear + "-" + (currentYear + 1 - 2000) : (currentYear - 1) + "-" + (currentYear - 2000);
             long count = estimateRepository.count() + 1;
-
-            // 3. Set the formatted ID
             estimate.setEstimateNo("JMD/" + finYear + "/" + (140 + count));
         }
-        
         return estimateRepository.save(estimate);
     }
-    
+
     @Override
     public Estimate updateEstimate(String id, Estimate data) {
         Estimate existing = estimateRepository.findById(id).orElseThrow();
-        
-        existing.setEstimateNo(data.getEstimateNo()); // Allow updating ref no if needed
+        existing.setEstimateNo(data.getEstimateNo());
         existing.setEstimateDate(data.getEstimateDate());
         existing.setClientId(data.getClientId());
         existing.setClientName(data.getClientName());
         existing.setBillingAddress(data.getBillingAddress());
         existing.setSubject(data.getSubject());
-        
         existing.setItems(data.getItems());
         existing.setSubTotal(data.getSubTotal());
         existing.setTaxAmount(data.getTaxAmount());
         existing.setTotal(data.getTotal());
-        
         existing.setStatus(data.getStatus());
         existing.setNotes(data.getNotes());
-        
         return estimateRepository.save(existing);
     }
 
-    @Override
-    public void deleteEstimate(String id) {
-        estimateRepository.deleteById(id);
-    }
-
+    // --- PDF GENERATION ---
     @Override
     public byte[] generateEstimatePdf(String id) throws Exception {
         Estimate estimate = estimateRepository.findById(id).orElseThrow();
-        
-        // Assuming ClientRepository/CompanyRepository are also MongoRepositories now
-        // If Client not found, use empty object to avoid null pointers
         Client client = clientRepository.findById(estimate.getClientId()).orElse(new Client());
-        Company company = companyRepository.findById("MY_COMPANY").orElse(new Company()); 
+        Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
 
-        Document document = new Document(PageSize.A4, 20, 20, 20, 20);
+        if(company.getCompanyName() == null) {
+            company.setCompanyName("JMD DÉCOR");
+            company.setAddress("210 ASHIRWAD INDUSTRIAL ESTATE BLDG. NO. -5 RAM MANDIR ROAD GOREGAON WEST MUMBAI 400104");
+            company.setEmail("JMDSIGNAGE.2010@GMAIL.COM");
+            company.setGstin("27AAOPY8409R1ZD");
+            company.setPhone("9819707090 / 9322821737");
+            company.setBankName("KOTAK MAHINDRA BANK");
+            company.setAccountNumber("9111365107");
+            company.setIfscCode("KKBK0000643");
+        }
+
+        Document document = new Document(PageSize.A4, 15, 15, 15, 15);
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         PdfWriter.getInstance(document, out);
 
         document.open();
 
-        // --- 1. COMPANY HEADER BOX ---
+        // 1. HEADER
         PdfPTable headerTable = new PdfPTable(2);
         headerTable.setWidthPercentage(100);
-        headerTable.setWidths(new float[]{3, 1}); 
+        headerTable.setWidths(new float[]{3.5f, 1});
 
-        PdfPCell companyInfo = new PdfPCell();
-        companyInfo.setBorder(Rectangle.BOX);
-        companyInfo.setPadding(5);
-        companyInfo.addElement(new Paragraph("JMD DÉCOR", FONT_HEADER));
-        companyInfo.addElement(new Paragraph(company.getAddress() != null ? company.getAddress() : "", FONT_SMALL));
-        companyInfo.addElement(new Paragraph(company.getEmail() != null ? company.getEmail() : "", FONT_SMALL));
-        companyInfo.addElement(new Paragraph("GST No.- " + (company.getGstin() != null ? company.getGstin() : "-"), FONT_BOLD));
-        headerTable.addCell(companyInfo);
+        PdfPCell companyCell = new PdfPCell();
+        companyCell.setBorder(Rectangle.BOX);
+        companyCell.setPadding(5);
+        companyCell.addElement(new Paragraph(company.getCompanyName(), FONT_COMPANY_NAME));
+        companyCell.addElement(new Paragraph(company.getAddress(), FONT_NORMAL));
+        companyCell.addElement(new Paragraph(company.getPhone() + " / " + company.getEmail(), FONT_NORMAL));
+        companyCell.addElement(new Paragraph("GST No.- " + company.getGstin(), FONT_NORMAL));
+        headerTable.addCell(companyCell);
 
-        PdfPCell emptyRef = new PdfPCell();
-        emptyRef.setBorder(Rectangle.BOX);
-        // You could put dynamic REF/DATE here if not using the rows below
-        headerTable.addCell(emptyRef); 
+        PdfPCell logoCell = new PdfPCell();
+        logoCell.setBorder(Rectangle.BOX);
+        logoCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        logoCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        
+        try {
+            Image img = null;
+            if (company.getLogoUrl() != null && !company.getLogoUrl().isBlank()) {
+                try { img = Image.getInstance(company.getLogoUrl()); } catch (Exception e) {}
+            }
+            if (img == null) {
+                URL logoResource = getClass().getResource("/logo.png");
+                if (logoResource != null) img = Image.getInstance(logoResource);
+            }
+            if (img != null) {
+                img.scaleToFit(80, 50);
+                img.setAlignment(Element.ALIGN_CENTER);
+                logoCell.addElement(img);
+            } else { 
+                throw new RuntimeException("No img"); 
+            }
+        } catch (Exception e) {
+            Paragraph p = new Paragraph("JMD\nSIGNAGE", FONT_BOLD_BIG);
+            p.setAlignment(Element.ALIGN_CENTER);
+            logoCell.addElement(p);
+        }
+        headerTable.addCell(logoCell);
         document.add(headerTable);
 
-        // --- 2. CLIENT ROW ---
-        PdfPTable clientRow = new PdfPTable(4);
-        clientRow.setWidthPercentage(100);
-        clientRow.setWidths(new float[]{0.5f, 4, 1, 1.5f});
+        // 2. CLIENT & REF DETAILS
+        PdfPTable infoTable = new PdfPTable(4);
+        infoTable.setWidthPercentage(100);
+        infoTable.setWidths(new float[]{3, 3, 0.5f, 1.5f});
 
-        addCell(clientRow, "TO", FONT_RED, true, Color.WHITE);
-        
-        String clientDetails = estimate.getClientName() + "\n" + (estimate.getBillingAddress() != null ? estimate.getBillingAddress() : "");
-        addCell(clientRow, clientDetails, FONT_BOLD, true, Color.WHITE);
+        addCell(infoTable, "BILLED TO", FONT_HEADER_RED, Color.WHITE, 1);
+        addCell(infoTable, "SHIPPED TO", FONT_HEADER_RED, Color.WHITE, 3);
 
-        addCell(clientRow, "REF", FONT_BOLD, true, Color.WHITE);
-        addCell(clientRow, estimate.getEstimateNo(), FONT_NORMAL, true, Color.WHITE);
+        String billingInfo = estimate.getClientName() + "\n" + (estimate.getBillingAddress() != null ? estimate.getBillingAddress() : "");
+        String shippingInfo = estimate.getClientName() + "\n" + (estimate.getBillingAddress() != null ? estimate.getBillingAddress() : ""); 
         
-        document.add(clientRow);
+        addCell(infoTable, billingInfo, FONT_BOLD, Color.WHITE, 1);
+        addCell(infoTable, shippingInfo, FONT_BOLD, Color.WHITE, 1);
         
-        // --- 3. GST & DATE ROW ---
-        PdfPTable gstRow = new PdfPTable(4);
-        gstRow.setWidthPercentage(100);
-        gstRow.setWidths(new float[]{2, 2.5f, 1, 1.5f});
-        
-        // Use Estimate's captured GST or Client's current GST
-        String gstVal = estimate.getGstin() != null ? estimate.getGstin() : (client.getGstin() != null ? client.getGstin() : "-");
-        
-        addCell(gstRow, "CLIENT GSTIN : " + gstVal, FONT_BOLD, true, Color.WHITE);
-        addCell(gstRow, "", FONT_NORMAL, true, Color.WHITE); 
-        addCell(gstRow, "DATE", FONT_BOLD, true, Color.WHITE);
-        
-        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("dd/MM/yy").withZone(ZoneId.systemDefault());
-        String dateStr = estimate.getEstimateDate() != null ? dtf.format(estimate.getEstimateDate()) : "-";
-        addCell(gstRow, dateStr, FONT_BOLD, true, Color.WHITE);
-        document.add(gstRow);
+        addCell(infoTable, "REF", FONT_BOLD, Color.WHITE, 1);
+        addCell(infoTable, estimate.getEstimateNo(), FONT_NORMAL, Color.WHITE, 1);
 
-        // --- 4. ATTENTION ROW ---
-        PdfPTable attRow = new PdfPTable(1);
-        attRow.setWidthPercentage(100);
-        addCell(attRow, "KIND ATT.: " + (estimate.getAttention() != null ? estimate.getAttention() : " "), FONT_BOLD, true, Color.WHITE);
-        document.add(attRow);
+        String clientGst = estimate.getGstin() != null ? estimate.getGstin() : (client.getGstin() != null ? client.getGstin() : "");
+        
+        addCell(infoTable, "CLIENT GSTIN: " + clientGst, FONT_BOLD, Color.WHITE, 1);
+        addCell(infoTable, "CLIENT GSTIN: " + clientGst, FONT_BOLD, Color.WHITE, 1);
+        
+        addCell(infoTable, "Date", FONT_BOLD, Color.WHITE, 1);
+        DateTimeFormatter dtf = DateTimeFormatter.ofPattern("M/d/yy").withZone(ZoneId.systemDefault());
+        addCell(infoTable, estimate.getEstimateDate() != null ? dtf.format(estimate.getEstimateDate()) : "-", FONT_NORMAL, Color.WHITE, 1);
 
-        // --- 5. SUBJECT / LOCATION HEADER ---
-        PdfPTable subjectRow = new PdfPTable(1);
-        subjectRow.setWidthPercentage(100);
-        PdfPCell subjCell = new PdfPCell(new Phrase(estimate.getSubject() != null ? estimate.getSubject() : "PROJECT LOCATION : -", FONT_BOLD));
-        subjCell.setBackgroundColor(Color.WHITE); 
-        subjCell.setPadding(5);
-        subjectRow.addCell(subjCell);
-        document.add(subjectRow);
+        String attn = "KIND ATTENTION: " + (estimate.getSubject() != null ? "" : ""); 
+        addCell(infoTable, attn, FONT_BOLD, Color.WHITE, 4);
 
-        // --- 6. ITEMS TABLE ---
-        float[] colWidths = {0.8f, 5, 1.5f, 1.2f, 1, 1.5f, 2, 2, 2};
-        PdfPTable itemTable = new PdfPTable(colWidths);
+        String loc = "PROJECT LOCATION : " + (estimate.getSubject() != null ? estimate.getSubject() : "");
+        addCell(infoTable, loc, FONT_BOLD, Color.WHITE, 4);
+
+        document.add(infoTable);
+
+        // 3. ITEMS TABLE
+        float[] itemWidths = {0.6f, 5f, 1f, 1f, 1f, 1.5f, 1.5f, 1.5f, 2f};
+        PdfPTable itemTable = new PdfPTable(itemWidths);
         itemTable.setWidthPercentage(100);
-        
-        String[] headers = {"Sr No.", "Description", "HSN CODE", "Total Unit", "Qty", "Rate", "Amount", "IGST@18%", "Total Amount"};
+
+        String[] headers = {"Sr\nNo.", "Description", "HSN\nCode", "Total\nUnit", "Qty", "Rate", "Amount", "IGST\n18%", "Total Amount"};
         for(String h : headers) {
-            PdfPCell c = new PdfPCell(new Phrase(h, FONT_BOLD));
-            c.setBackgroundColor(Color.YELLOW);
+            PdfPCell c = new PdfPCell(new Phrase(h, FONT_SMALL_BOLD));
+            c.setBackgroundColor(new Color(255, 255, 100)); // Yellow
             c.setHorizontalAlignment(Element.ALIGN_CENTER);
             c.setVerticalAlignment(Element.ALIGN_MIDDLE);
-            c.setPadding(4);
+            c.setPadding(3);
             itemTable.addCell(c);
         }
 
         int sr = 1;
+        double subTotal = 0;
+        double totalTax = 0;
+        
         if (estimate.getItems() != null) {
             for (Estimate.EstimateItem item : estimate.getItems()) {
                 double amount = item.getQty() * item.getRate();
-                double taxVal = amount * (item.getTaxRate() / 100);
-                double lineTotal = amount + taxVal;
+                double tax = amount * (item.getTaxRate() / 100.0);
+                double lineTotal = amount + tax;
+                subTotal += amount;
+                totalTax += tax;
 
                 addCenterCell(itemTable, String.valueOf(sr++));
                 addLeftCell(itemTable, item.getDescription());
-                addCenterCell(itemTable, item.getHsnCode());
-                addCenterCell(itemTable, item.getUnit() != null ? item.getUnit() : "-");
+                addCenterCell(itemTable, item.getHsnCode() != null ? item.getHsnCode() : "");
+                addCenterCell(itemTable, "1");
                 addCenterCell(itemTable, String.valueOf(item.getQty()));
                 addRightCell(itemTable, String.format("%.0f", item.getRate()));
                 addRightCell(itemTable, String.format("%.0f", amount));
-                addRightCell(itemTable, String.format("%.0f", taxVal));
+                addRightCell(itemTable, String.format("%.0f", tax));
                 addRightCell(itemTable, String.format("%.0f", lineTotal));
             }
         }
 
-        // Fill empty rows
         for(int i=0; i<3; i++) {
              for(int j=0; j<9; j++) {
                  PdfPCell c = new PdfPCell(new Phrase(" "));
@@ -229,79 +225,128 @@ public class EstimateServiceImpl implements EstimateService {
                  itemTable.addCell(c);
              }
         }
-        
-        // --- TOTAL ROW ---
-        PdfPCell blank = new PdfPCell(new Phrase(" ", FONT_BOLD));
-        blank.setColspan(6); 
-        itemTable.addCell(blank);
 
-        addRightCell(itemTable, String.format("%.0f", estimate.getSubTotal())); 
-        addRightCell(itemTable, String.format("%.0f", estimate.getTaxAmount())); 
-        addRightCell(itemTable, String.format("%.2f", estimate.getTotal())); 
+        // --- TOTAL ROW ---
+        PdfPCell totalLabel = new PdfPCell(new Phrase("Total", FONT_BOLD));
+        totalLabel.setColspan(6);
+        totalLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        itemTable.addCell(totalLabel);
+        
+        addRightCell(itemTable, String.format("%.0f", subTotal));
+        addRightCell(itemTable, String.format("%.1f", totalTax));
+        // Added Total
+        PdfPCell grandTotalCell = new PdfPCell(new Phrase(String.format("%.2f", subTotal + totalTax), FONT_BOLD));
+        grandTotalCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        itemTable.addCell(grandTotalCell);
 
         document.add(itemTable);
 
-        // --- 7. FOOTER (TERMS + BANK) ---
+        // ============================================
+        // 4. FOOTER (Left: Terms & Bank, Right: Signature)
+        // ============================================
         PdfPTable footerTable = new PdfPTable(2);
         footerTable.setWidthPercentage(100);
-        footerTable.setWidths(new float[]{2, 1});
+        footerTable.setWidths(new float[]{2, 1}); // 2:1 Ratio
 
-        // LEFT: Terms
-        PdfPCell termsCell = new PdfPCell();
-        termsCell.setBorder(Rectangle.BOX);
-        termsCell.setPadding(2);
+        // --- LEFT COLUMN: TERMS + BANK ---
+        PdfPCell leftContainer = new PdfPCell();
+        leftContainer.setBorder(Rectangle.BOX);
+        leftContainer.setPadding(0);
+
+        // A. Terms Table
+        PdfPTable termsTable = new PdfPTable(2);
+        termsTable.setWidthPercentage(100);
+        termsTable.setWidths(new float[]{0.3f, 5});
+
+        PdfPCell termHeader = new PdfPCell(new Phrase("TERMS & CONDITIONS", FONT_BOLD));
+        termHeader.setColspan(2);
+        termHeader.setBorder(Rectangle.BOTTOM);
+        termHeader.setBackgroundColor(new Color(240, 240, 240));
+        termHeader.setPadding(3);
+        termsTable.addCell(termHeader);
+
+        String[] defaultTerms = {
+            "Payment 50% in advance with purchase order and balance on completion of job.",
+            "Specification,if any must be intimated in writing before issuing of purchase order.",
+            "All co-operation permission will be granted by you.",
+            "Payment should be made in name of \" " + company.getCompanyName() + "\"",
+            "Electrical point up to the sign to be provided by the Client.",
+            "JMD is not responsible for any Damage occurred to sign, due to Natural calamities",
+            "Like Wind storming, cyclone, heavy rains, vandalism etc, as these are beyond our control.",
+            "Completion of job 20 to 30 days after confirming order"
+        };
         
-        PdfPTable tTerms = new PdfPTable(2);
-        tTerms.setWidthPercentage(100);
-        tTerms.setWidths(new float[]{0.3f, 5});
-        
-        // You can fetch these from estimate.getNotes() if customized, or use hardcoded defaults
-        if (estimate.getNotes() != null && !estimate.getNotes().isEmpty()) {
-             addTermRow(tTerms, "1", estimate.getNotes());
-        } else {
-             addTermRow(tTerms, "1", "No any complaints will be accepted after Delivery Of Materials.");
-             addTermRow(tTerms, "2", "Payment 50% in advance with purchase order and balance on completion of job.");
-             addTermRow(tTerms, "3", "Specification,if any must be intimated in writing before issuing of purchase order.");
-             addTermRow(tTerms, "4", "All co-Operation permission will be granted by you.");
-             addTermRow(tTerms, "5", "Payment should be made in name of \" JMD DECOR \"");
+        int tSr = 1;
+        String[] actualTerms = (estimate.getNotes() != null && !estimate.getNotes().isEmpty()) 
+                                ? estimate.getNotes().split("\n") 
+                                : defaultTerms;
+                                
+        for(String t : actualTerms) {
+            PdfPCell c1 = new PdfPCell(new Phrase(String.valueOf(tSr++), FONT_NORMAL));
+            c1.setBorder(Rectangle.BOTTOM | Rectangle.RIGHT);
+            c1.setHorizontalAlignment(Element.ALIGN_CENTER);
+            termsTable.addCell(c1);
+            
+            PdfPCell c2 = new PdfPCell(new Phrase(t, FONT_NORMAL));
+            c2.setBorder(Rectangle.BOTTOM);
+            termsTable.addCell(c2);
         }
         
-        termsCell.addElement(new Paragraph("TERMS & CONDITIONS", FONT_BOLD));
-        termsCell.addElement(tTerms);
-        footerTable.addCell(termsCell);
+        leftContainer.addElement(termsTable);
 
-        // RIGHT: Bank/Sign
-        PdfPCell rightFooter = new PdfPCell();
-        rightFooter.setBorder(Rectangle.BOX);
-        rightFooter.setPadding(0);
-
-        PdfPCell grandTotal = new PdfPCell(new Phrase("Total    " + String.format("%.2f", estimate.getTotal()), FONT_BOLD));
-        grandTotal.setPadding(5);
-        grandTotal.setHorizontalAlignment(Element.ALIGN_RIGHT);
-        
-        PdfPCell signCell = new PdfPCell();
-        signCell.setBorder(Rectangle.NO_BORDER);
-        signCell.setPadding(10);
-        signCell.addElement(new Paragraph("YOUR FAITHFULLY", FONT_SMALL));
-        signCell.addElement(new Paragraph("JMD DÉCOR", FONT_RED));
-        signCell.addElement(Chunk.NEWLINE);
-        signCell.addElement(new Paragraph("RAMESH YADAV", FONT_SMALL));
-        signCell.addElement(new Paragraph("9819707090", FONT_SMALL));
+        // B. Bank Details (Below Terms)
+        PdfPTable bankTable = new PdfPTable(1);
+        bankTable.setWidthPercentage(100);
         
         PdfPCell bankCell = new PdfPCell();
-        bankCell.setBackgroundColor(Color.WHITE);
-        Font blueFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9, Color.BLUE);
-        bankCell.addElement(new Paragraph(company.getBankName(), blueFont));
-        bankCell.addElement(new Paragraph("ACCOUNT NO. " + company.getAccountNumber(), blueFont));
-        bankCell.addElement(new Paragraph("IFSC CODE: " + company.getIfscCode(), blueFont));
-
-        PdfPTable rightInner = new PdfPTable(1);
-        rightInner.addCell(grandTotal);
-        rightInner.addCell(signCell);
-        rightInner.addCell(bankCell);
+        bankCell.setBorder(Rectangle.TOP); // Separator line from terms
+        bankCell.setPadding(5);
         
-        rightFooter.addElement(rightInner);
-        footerTable.addCell(rightFooter);
+        Paragraph bankP = new Paragraph();
+        bankP.setAlignment(Element.ALIGN_LEFT);
+        bankP.add(new Paragraph("BANK DETAILS:", FONT_BOLD));
+        bankP.add(new Paragraph(company.getBankName(), FONT_BANK_BLUE));
+        bankP.add(new Paragraph("ACC NO. " + company.getAccountNumber(), FONT_BANK_BLUE));
+        bankP.add(new Paragraph("IFSC: " + company.getIfscCode(), FONT_BANK_BLUE));
+        bankCell.addElement(bankP);
+        
+        bankTable.addCell(bankCell);
+        leftContainer.addElement(bankTable);
+        
+        footerTable.addCell(leftContainer);
+
+        // --- RIGHT COLUMN: SIGNATURE (Full Height) ---
+        PdfPCell rightCell = new PdfPCell();
+        rightCell.setBorder(Rectangle.BOX);
+        rightCell.setPadding(0);
+        rightCell.setVerticalAlignment(Element.ALIGN_MIDDLE); // Key for vertical center
+        rightCell.setHorizontalAlignment(Element.ALIGN_CENTER);
+        
+        // Use a table to force centering if cell alignment isn't enough
+        PdfPTable signTable = new PdfPTable(1);
+        signTable.setWidthPercentage(100);
+        
+        PdfPCell signInner = new PdfPCell();
+        signInner.setBorder(Rectangle.NO_BORDER);
+        signInner.setMinimumHeight(150); // Ensure it matches height of left column roughly or stretches
+        signInner.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        signInner.setHorizontalAlignment(Element.ALIGN_CENTER);
+        
+        Paragraph signP = new Paragraph();
+        signP.setAlignment(Element.ALIGN_CENTER);
+        signP.add(new Paragraph("YOUR'S FAITHFULLY", FONT_BOLD));
+        signP.add(new Paragraph(company.getCompanyName(), FONT_SIGNATURE_RED));
+        signP.add(Chunk.NEWLINE);
+        signP.add(Chunk.NEWLINE);
+        signP.add(Chunk.NEWLINE);
+        signP.add(new Paragraph("RAMESH YADAV", FONT_NORMAL));
+        signP.add(new Paragraph("9819707090", FONT_NORMAL));
+        
+        signInner.addElement(signP);
+        signTable.addCell(signInner);
+        
+        rightCell.addElement(signTable);
+        footerTable.addCell(rightCell);
 
         document.add(footerTable);
 
@@ -309,35 +354,34 @@ public class EstimateServiceImpl implements EstimateService {
         return out.toByteArray();
     }
 
-    private void addCell(PdfPTable table, String text, Font font, boolean border, Color bg) {
+    // --- HELPER METHODS ---
+    private void addCell(PdfPTable table, String text, Font font, Color bg, int colspan) {
         PdfPCell cell = new PdfPCell(new Phrase(text, font));
-        if(!border) cell.setBorder(Rectangle.NO_BORDER);
         cell.setBackgroundColor(bg);
+        cell.setColspan(colspan);
         cell.setPadding(3);
         table.addCell(cell);
     }
-    
+
     private void addCenterCell(PdfPTable table, String text) {
         PdfPCell c = new PdfPCell(new Phrase(text, FONT_NORMAL));
         c.setHorizontalAlignment(Element.ALIGN_CENTER);
+        c.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        c.setPadding(3);
         table.addCell(c);
     }
     private void addLeftCell(PdfPTable table, String text) {
         PdfPCell c = new PdfPCell(new Phrase(text, FONT_NORMAL));
         c.setHorizontalAlignment(Element.ALIGN_LEFT);
+        c.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        c.setPadding(3);
         table.addCell(c);
     }
     private void addRightCell(PdfPTable table, String text) {
         PdfPCell c = new PdfPCell(new Phrase(text, FONT_NORMAL));
         c.setHorizontalAlignment(Element.ALIGN_RIGHT);
+        c.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        c.setPadding(3);
         table.addCell(c);
-    }
-    private void addTermRow(PdfPTable table, String sr, String text) {
-        PdfPCell c1 = new PdfPCell(new Phrase(sr, FONT_SMALL));
-        c1.setBorder(Rectangle.NO_BORDER);
-        table.addCell(c1);
-        PdfPCell c2 = new PdfPCell(new Phrase(text, FONT_SMALL));
-        c2.setBorder(Rectangle.NO_BORDER);
-        table.addCell(c2);
     }
 }
