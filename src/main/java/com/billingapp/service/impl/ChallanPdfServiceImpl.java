@@ -75,9 +75,10 @@ public class ChallanPdfServiceImpl {
         document.add(title);
 
         // --- 2. MAIN INFO TABLE (Split into 2 Rows) ---
+        // Width Ratio 1.5 : 1 (60% : 40%)
         PdfPTable mainTable = new PdfPTable(2); 
         mainTable.setWidthPercentage(100);
-        mainTable.setWidths(new float[]{1.5f, 1}); // Left column wider
+        mainTable.setWidths(new float[]{1.5f, 1}); 
 
         // ==========================================
         // ROW 1: COMPANY INFO (Left) + CHALLAN META (Right)
@@ -91,12 +92,16 @@ public class ChallanPdfServiceImpl {
         companyCell.addElement(new Paragraph(company.getAddress(), FONT_NORMAL));
         companyCell.addElement(new Paragraph(company.getEmail(), new Font(Font.HELVETICA, 9, Font.NORMAL, Color.BLUE)));
         
-        // 👇 FIX: Added Significant Gap between GST and UDYAM
-        Paragraph pIds = new Paragraph();
-        pIds.add(new Chunk("GST: " + company.getGstin(), FONT_BOLD));
-        pIds.add(new Chunk("            ", FONT_BOLD)); // 12 spaces gap
-        pIds.add(new Chunk("UDYAM- " + (company.getUdyamRegNo()!=null ? company.getUdyamRegNo() : "-"), FONT_BOLD));
-        companyCell.addElement(pIds);
+        // GST Line
+        Paragraph pGst = new Paragraph();
+        pGst.add(new Chunk("GST: " + company.getGstin(), FONT_BOLD));
+        companyCell.addElement(pGst);
+
+        // Udyam in Next Line
+        String udyam = company.getUdyamRegNo() != null ? company.getUdyamRegNo() : "-";
+        Paragraph pUdyam = new Paragraph();
+        pUdyam.add(new Chunk("UDYAM- " + udyam, FONT_BOLD));
+        companyCell.addElement(pUdyam);
         
         mainTable.addCell(companyCell);
 
@@ -152,6 +157,8 @@ public class ChallanPdfServiceImpl {
         PdfPCell contactVal = new PdfPCell();
         contactVal.setBorder(Rectangle.BOX);
         contactVal.setPadding(3);
+        // 👇 FIX: Added Vertical Alignment
+        contactVal.setVerticalAlignment(Element.ALIGN_MIDDLE);
         
         Paragraph pLoc = new Paragraph();
         pLoc.add(new Chunk("Location: ", FONT_BOLD));
@@ -166,7 +173,10 @@ public class ChallanPdfServiceImpl {
         document.add(mainTable);
 
         // --- 3. ITEMS TABLE ---
-        float[] itemWidths = {0.8f, 5, 2, 1.5f, 1}; 
+        // Width Ratio 1.5 : 1 (60% : 40%)
+        // Left (0.8 + 5.2 = 6.0) : Right (1.5 + 1.5 + 1 = 4.0) -> Ratio 6:4 = 1.5:1
+        float[] itemWidths = {0.8f, 5.2f, 1.5f, 1.5f, 1f}; 
+        
         PdfPTable itemTable = new PdfPTable(itemWidths);
         itemTable.setWidthPercentage(100);
         itemTable.setSpacingBefore(0); 
