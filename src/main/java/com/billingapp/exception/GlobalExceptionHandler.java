@@ -1,5 +1,6 @@
 package com.billingapp.exception;
 
+import io.sentry.Sentry; // 👈 1. Added Sentry import
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -34,6 +35,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleOther(Exception ex) {
+        // 👇 2. Send the unhandled exception to Sentry!
+        Sentry.captureException(ex);
+
         Map<String, Object> body = new HashMap<>();
         body.put("success", false);
         body.put("message", "Internal server error");
