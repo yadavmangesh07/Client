@@ -11,6 +11,7 @@ import com.billingapp.repository.ClientRepository;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.repository.WorkCompletionCertificateRepository;
 import com.billingapp.service.ClientService;
+import lombok.extern.slf4j.Slf4j; // 👈 1. Added SLF4J Import
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -23,6 +24,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+@Slf4j // 👈 2. Added SLF4J Annotation
 @Service
 @Transactional
 public class ClientServiceImpl implements ClientService {
@@ -45,9 +47,9 @@ public class ClientServiceImpl implements ClientService {
         this.mongoTemplate = mongoTemplate;
     }
 
-    // ... (create, update, getById, delete, getAll remain the same) ...
     @Override
     public ClientDTO create(CreateClientRequest req) {
+        log.info("Creating new client with name: {}", req.getName()); // 👈 Log creation start
         Client client = Client.builder()
                 .name(req.getName())
                 .email(req.getEmail())
@@ -63,13 +65,18 @@ public class ClientServiceImpl implements ClientService {
                 .build();
 
         Client saved = clientRepository.save(client);
+        log.info("Client successfully created with ID: {}", saved.getId()); // 👈 Log success
         return mapper.toDto(saved);
     }
 
     @Override
     public ClientDTO update(String id, CreateClientRequest req) {
+        log.info("Updating client profile for ID: {}", id);
         Client client = clientRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
+                .orElseThrow(() -> {
+                    log.warn("Update failed: Client ID {} not found", id); // 👈 Log warning for bad IDs
+                    return new IllegalArgumentException("Client not found: " + id);
+                });
         
         client.setName(req.getName());
         client.setEmail(req.getEmail());
@@ -83,46 +90,46 @@ public class ClientServiceImpl implements ClientService {
         client.setUpdatedAt(Instant.now());
         
         Client saved = clientRepository.save(client);
+        log.info("Client ID: {} updated successfully", id);
         return mapper.toDto(saved);
     }
 
     @Override
     public ClientDTO getById(String id) {
-        Client client = clientRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + id));
-        return mapper.toDto(client);
+        return clientRepository.findById(id)
+                .map(mapper::toDto)
+                .orElseThrow(() -> {
+                    log.warn("Fetch failed: Client ID {} not found", id);
+                    return new IllegalArgumentException("Client not found: " + id);
+                });
     }
 
-    // 👇 UPDATED: Smart Lookup (ID first, then Name fallback)
     @Override
     public ClientProfileDTO getClientProfile(String clientId) {
-        // 1. Fetch Client Basic Details
-        Client client = clientRepository.findById(clientId)
-                .orElseThrow(() -> new IllegalArgumentException("Client not found: " + clientId));
+        log.info("Assembling profile for client: {}", clientId);
+        long startTime = System.currentTimeMillis(); // 👈 Start timer
 
-        // 2. Define Parallel Tasks
-        
-        // Task A: Fetch Invoices by Client ID
+        Client client = clientRepository.findById(clientId)
+                .orElseThrow(() -> {
+                    log.warn("Profile fetch failed: ID {} not found", clientId);
+                    return new IllegalArgumentException("Client not found: " + clientId);
+                });
+
         CompletableFuture<List<Invoice>> invoicesTask = CompletableFuture.supplyAsync(() -> 
             invoiceRepository.findByClientId(clientId)
         );
 
-        // Task B: Fetch WCCs (Smart Strategy)
         CompletableFuture<List<WorkCompletionCertificate>> wccTask = CompletableFuture.supplyAsync(() -> {
-            // 2a. Try finding by Client ID (Robust, New Way)
             List<WorkCompletionCertificate> byId = wccRepository.findByClientId(clientId);
             if (byId != null && !byId.isEmpty()) {
                 return byId;
             }
-            
-            // 2b. Fallback: Find by Store Name (Legacy Way for old records)
+            log.info("No WCC found by ID for client {}, falling back to name-based lookup for: {}", clientId, client.getName());
             return wccRepository.findByStoreNameIgnoreCase(client.getName());
         });
 
-        // 3. Wait for all tasks to complete
         CompletableFuture.allOf(invoicesTask, wccTask).join();
 
-        // 4. Aggregate Results
         ClientProfileDTO dto = new ClientProfileDTO();
         dto.setClient(client);
 
@@ -130,7 +137,6 @@ public class ClientServiceImpl implements ClientService {
             List<Invoice> invoices = invoicesTask.get();
             List<WorkCompletionCertificate> wccs = wccTask.get();
 
-            // Set Recent Invoices (Sorted by Date DESC, Limit 10)
             if (invoices != null) {
                 invoices.sort(Comparator.comparing(Invoice::getIssuedAt).reversed());
                 dto.setRecentInvoices(invoices.stream().limit(10).collect(Collectors.toList()));
@@ -139,13 +145,9 @@ public class ClientServiceImpl implements ClientService {
                 invoices = Collections.emptyList();
             }
 
-            // Set WCCs
             dto.setRecentCertificates(wccs != null ? wccs : Collections.emptyList());
 
-            // Calculate Stats
             double totalBilled = invoices.stream().mapToDouble(Invoice::getTotal).sum();
-            
-            // Calculate Pending
             double pending = invoices.stream()
                     .filter(inv -> "PENDING".equalsIgnoreCase(inv.getStatus()) || "UNPAID".equalsIgnoreCase(inv.getStatus()))
                     .mapToDouble(Invoice::getTotal)
@@ -158,8 +160,12 @@ public class ClientServiceImpl implements ClientService {
             stats.put("wccCount", wccs != null ? wccs.size() : 0);
 
             dto.setStats(stats);
+            
+            long endTime = System.currentTimeMillis();
+            log.info("Profile assembly for {} took {} ms", client.getName(), (endTime - startTime)); // 👈 Performance log
 
         } catch (Exception e) {
+            log.error("Critical error assembling profile for client {}: {}", clientId, e.getMessage()); // 👈 Error log
             throw new RuntimeException("Error assembling client profile", e);
         }
 
@@ -175,11 +181,15 @@ public class ClientServiceImpl implements ClientService {
 
     @Override
     public void delete(String id) {
+        log.warn("Request received to DELETE client ID: {}", id); // 👈 Warn for destructive actions
         clientRepository.deleteById(id);
+        log.info("Client ID: {} successfully deleted", id);
     }
 
     @Override
     public Page<ClientDTO> search(String q, int page, int size, String sort) {
+        log.info("Client search initiated: query='{}', page={}, size={}", q, page, size);
+        
         if (page < 0) page = 0;
         if (size <= 0) size = 10;
 
@@ -201,8 +211,9 @@ public class ClientServiceImpl implements ClientService {
         query.with(pageable);
 
         List<Client> list = mongoTemplate.find(query, Client.class);
-        List<ClientDTO> dtos = list.stream().map(mapper::toDto).collect(Collectors.toList());
+        log.info("Search completed. Found {} total matching records", total);
         
+        List<ClientDTO> dtos = list.stream().map(mapper::toDto).collect(Collectors.toList());
         return new PageImpl<>(dtos, pageable, total);
     }
 
@@ -214,6 +225,7 @@ public class ClientServiceImpl implements ClientService {
             Sort.Direction dir = (parts.length > 1 && parts[1].equalsIgnoreCase("asc")) ? Sort.Direction.ASC : Sort.Direction.DESC;
             return Sort.by(dir, prop);
         } catch (Exception e) {
+            log.debug("Invalid sort parameter '{}', using default", sort);
             return defaultSort;
         }
     }
