@@ -4,7 +4,7 @@ import com.billingapp.security.JwtAuthenticationFilter;
 import com.billingapp.service.CustomUserDetailsService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod; // 👈 Make sure this is imported
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -37,14 +37,22 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
+            // 🟢 Ensure CORS is handled before security checks
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
-                // 👇 FIX 1: Explicitly allow all preflight OPTIONS requests
+                // Allow all Preflight OPTIONS requests (Crucial for 403 fixes)
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll() 
-                .requestMatchers("/api/auth/**", "/").permitAll() 
+                
+                // 🟢 PUBLIC ENDPOINTS
+                // Ensure these match exactly what is in your HealthController
+                .requestMatchers("/", "/api/auth/**", "/api/public/**").permitAll() 
+                
+                // Everything else is locked
                 .anyRequest().authenticated() 
             )
+            // 🟢 STATELESS session management
             .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            // 🟢 Add JWT filter
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -67,7 +75,8 @@ public class SecurityConfig {
     public UrlBasedCorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         
-        // 👇 FIX 2: Universal pattern matcher. This catches ANY Vercel preview URL safely.
+        // 🟢 Using OriginPatterns "*" with AllowCredentials(true) is safe for testing,
+        // but ensure the request header "Origin" is present from the cron job.
         config.setAllowedOriginPatterns(List.of("*")); 
         
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));

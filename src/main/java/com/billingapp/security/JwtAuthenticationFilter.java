@@ -25,35 +25,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.userDetailsService = userDetailsService;
     }
 
+    // 🟢 ADD THIS METHOD: Tells Spring NOT to run this filter for public routes
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+        String path = request.getServletPath();
+        return path.startsWith("/api/public/") || 
+               path.startsWith("/api/auth/") || 
+               path.equals("/");
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
                                     HttpServletResponse response, 
                                     FilterChain filterChain) throws ServletException, IOException {
         
-        // 1. Get Authorization Header
         String authHeader = request.getHeader("Authorization");
 
-        // 2. Check if it starts with "Bearer "
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7); // Remove "Bearer "
-            
-            // 3. Validate Token
-            if (jwtUtils.validateToken(token)) {
-                String username = jwtUtils.getUsernameFromToken(token);
-
-                // 4. Load User Details
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
-
-                // 5. Set Authentication in Context
-                UsernamePasswordAuthenticationToken authentication = 
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+            try {
+                String token = authHeader.substring(7);
                 
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                if (jwtUtils.validateToken(token)) {
+                    String username = jwtUtils.getUsernameFromToken(token);
+
+                    UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+
+                    UsernamePasswordAuthenticationToken authentication = 
+                            new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                }
+            } catch (Exception e) {
+                // If token is invalid/expired, we don't set the context
+                // Spring Security will then handle it based on your permitAll rules
+                logger.error("Could not set user authentication in security context", e);
             }
         }
 
-        // 6. Continue the filter chain
         filterChain.doFilter(request, response);
     }
 }
