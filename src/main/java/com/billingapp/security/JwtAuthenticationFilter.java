@@ -26,13 +26,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     // 🟢 ADD THIS METHOD: Tells Spring NOT to run this filter for public routes
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
-        String path = request.getServletPath();
-        return path.startsWith("/api/public/") || 
-               path.startsWith("/api/auth/") || 
-               path.equals("/");
-    }
+    // @Override
+    // protected boolean shouldNotFilter(HttpServletRequest request) throws ServletException {
+    //     String path = request.getServletPath();
+    //     return path.startsWith("/api/public/") || 
+    //            path.startsWith("/api/auth/") || 
+    //            path.equals("/");
+    // }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
