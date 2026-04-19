@@ -36,4 +36,5 @@ public class CreateInvoiceRequest {
     private Instant challanDate;
     private String poNumber;
     private Instant poDate;
+    private String invoiceNo;
 }

@@ -10,7 +10,7 @@ import java.util.Optional;
 
 @Repository
 public interface InvoiceRepository extends MongoRepository<Invoice, String> {
-
+    boolean existsByInvoiceNo(String invoiceNo);
     // Existing: Smart Invoice Number Logic
     Optional<Invoice> findTopByInvoiceNoStartingWithOrderByCreatedAtDesc(String prefix);
 

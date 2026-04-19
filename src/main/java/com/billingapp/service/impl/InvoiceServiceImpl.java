@@ -7,7 +7,6 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.mapper.InvoiceMapper;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.InvoiceService;
-// import com.billingapp.util.InvoiceNumberUtil; // 👈 Removed, logic is now internal
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -16,11 +15,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.LocalDate; // 👈 Added
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional; // 👈 Added
 import java.util.stream.Collectors;
 
 @Service
@@ -43,10 +40,23 @@ public class InvoiceServiceImpl implements InvoiceService {
             throw new IllegalArgumentException("Invoice must have at least one item");
         }
 
+        // 🟢 MANUAL CHANGE: Validate manual invoice number
+        if (req.getInvoiceNo() == null || req.getInvoiceNo().isBlank()) {
+            throw new IllegalArgumentException("Invoice number is required for manual entry");
+        }
+
+        // 🟢 MANUAL CHANGE: Check for uniqueness
+        if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
+            throw new IllegalArgumentException("Invoice number " + req.getInvoiceNo() + " already exists");
+        }
+
         Invoice invoice = mapper.toEntity(req);
         
-        // 👇 UPDATED: Generate Smart Invoice Number (JMD/2025-26/97)
-        invoice.setInvoiceNo(generateInvoiceNumber());
+        // 👇 COMMENTED OUT: Auto-generation logic
+        // invoice.setInvoiceNo(generateInvoiceNumber());
+        
+        // 🟢 MANUAL CHANGE: Number is now taken directly from the request/mapper
+        invoice.setInvoiceNo(req.getInvoiceNo());
 
         double subtotal = computeSubtotalFromItems(req.getItems());
         invoice.setSubtotal(subtotal);
@@ -85,19 +95,27 @@ public class InvoiceServiceImpl implements InvoiceService {
             existing.setTotal(subtotal + req.getTax());
             existing.setTax(req.getTax());
         } else if (req.getTax() != 0d) {
-            // Recalculate if only tax changed
             existing.setTax(req.getTax());
             existing.setTotal(existing.getSubtotal() + req.getTax());
         }
 
         // 2. Update Standard Fields
+        
+        // 🟢 MANUAL CHANGE: Handle manual invoice number updates
+        if (req.getInvoiceNo() != null && !req.getInvoiceNo().equals(existing.getInvoiceNo())) {
+            if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
+                throw new IllegalArgumentException("New invoice number already exists");
+            }
+            existing.setInvoiceNo(req.getInvoiceNo());
+        }
+
         if (req.getStatus() != null) existing.setStatus(req.getStatus());
         if (req.getIssuedAt() != null) existing.setIssuedAt(req.getIssuedAt());
         if (req.getDueDate() != null) existing.setDueDate(req.getDueDate());
         if (req.getCreatedBy() != null) existing.setCreatedBy(req.getCreatedBy());
         if (req.getClientId() != null) existing.setClientId(req.getClientId());
 
-        // 3. 👇 Update New Logistics/Address Fields
+        // 3. Update Logistics/Address Fields
         if (req.getBillingAddress() != null) existing.setBillingAddress(req.getBillingAddress());
         if (req.getShippingAddress() != null) existing.setShippingAddress(req.getShippingAddress());
         if (req.getTransportMode() != null) existing.setTransportMode(req.getTransportMode());
@@ -120,9 +138,6 @@ public class InvoiceServiceImpl implements InvoiceService {
         invoiceRepository.deleteById(id);
     }
 
-    // ----------------------------
-    // Search implementation
-    // ----------------------------
     @Override
     public Page<InvoiceDTO> search(String clientId, String status, String fromIso, String toIso,
                                    Double minTotal, Double maxTotal, int page, int size, String sort) {
@@ -187,43 +202,36 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
     }
 
-    // 👇 NEW LOGIC: Dynamic Financial Year + Auto Increment
+    /* 👇 COMMENTED OUT: Auto Increment Logic
     private String generateInvoiceNumber() {
         LocalDate now = LocalDate.now();
         int year = now.getYear();
-        int month = now.getMonthValue(); // 1 to 12
+        int month = now.getMonthValue();
 
         String fy;
-        // Financial Year Logic: If Month is Jan(1), Feb(2), Mar(3) -> Previous Year is start of FY
-        // Example: Jan 2026 => FY 2025-26
         if (month <= 3) {
             fy = (year - 1) + "-" + String.valueOf(year).substring(2); 
         } else {
-            // Example: April 2025 => FY 2025-26
             fy = year + "-" + String.valueOf(year + 1).substring(2); 
         }
 
         String prefix = "JMD/" + fy + "/";
-
-        // Find the last invoice with this specific prefix
-        // NOTE: Ensure InvoiceRepository has findTopByInvoiceNoStartingWithOrderByCreatedAtDesc
         Optional<Invoice> lastInvoice = invoiceRepository.findTopByInvoiceNoStartingWithOrderByCreatedAtDesc(prefix);
 
         int nextNum = 1;
         if (lastInvoice.isPresent()) {
             String lastNo = lastInvoice.get().getInvoiceNo();
-            // Format is JMD/2025-26/97
             String[] parts = lastNo.split("/");
             if (parts.length == 3) {
                 try {
                     int lastSeq = Integer.parseInt(parts[2]);
                     nextNum = lastSeq + 1;
                 } catch (NumberFormatException e) {
-                    nextNum = 1; // Safety fallback
+                    nextNum = 1;
                 }
             }
         }
-
         return prefix + nextNum;
     }
+    */
 }

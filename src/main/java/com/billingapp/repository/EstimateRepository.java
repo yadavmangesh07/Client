@@ -7,4 +7,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface EstimateRepository extends MongoRepository<Estimate, String> {
     // Basic CRUD is auto-provided
+    boolean existsByEstimateNo(String estimateNo);
 }

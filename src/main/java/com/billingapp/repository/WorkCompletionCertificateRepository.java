@@ -9,7 +9,7 @@ import java.util.Optional;
 
 @Repository
 public interface WorkCompletionCertificateRepository extends MongoRepository<WorkCompletionCertificate, String> {
-    
+    boolean existsByRefNo(String refNo);
     // 👇 NEW: Find by Client ID (Robust Link)
     List<WorkCompletionCertificate> findByClientId(String clientId);
 

@@ -46,6 +46,7 @@ public class InvoiceMapper {
     public Invoice toEntity(CreateInvoiceRequest req) {
         if (req == null) return null;
         Invoice invoice = Invoice.builder()
+                .invoiceNo(req.getInvoiceNo())
                 .clientId(req.getClientId())
                 
                 // Map new fields

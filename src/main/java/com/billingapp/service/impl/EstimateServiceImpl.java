@@ -50,6 +50,17 @@ public class EstimateServiceImpl implements EstimateService {
 
     @Override
     public Estimate createEstimate(Estimate estimate) {
+        // 🟢 MANUAL CHANGE: Validate that a manual estimate number was provided
+        if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isBlank()) {
+            throw new IllegalArgumentException("Estimate number is required for manual entry");
+        }
+
+        // 🟢 MANUAL CHANGE: Check for uniqueness in the database
+        if (estimateRepository.existsByEstimateNo(estimate.getEstimateNo())) {
+            throw new IllegalArgumentException("Estimate number " + estimate.getEstimateNo() + " already exists");
+        }
+
+        /* 👇 COMMENTED OUT: Auto-generation logic is no longer used.
         if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isEmpty()) {
             java.time.LocalDate now = java.time.LocalDate.now();
             int currentYear = now.getYear();
@@ -57,13 +68,23 @@ public class EstimateServiceImpl implements EstimateService {
             long count = estimateRepository.count() + 1;
             estimate.setEstimateNo("JMD/" + finYear + "/" + (140 + count));
         }
+        */
+
         return estimateRepository.save(estimate);
     }
 
     @Override
     public Estimate updateEstimate(String id, Estimate data) {
         Estimate existing = estimateRepository.findById(id).orElseThrow();
-        existing.setEstimateNo(data.getEstimateNo());
+        
+        // 🟢 MANUAL CHANGE: Allow manual update of estimate number with uniqueness check
+        if (data.getEstimateNo() != null && !data.getEstimateNo().equals(existing.getEstimateNo())) {
+            if (estimateRepository.existsByEstimateNo(data.getEstimateNo())) {
+                throw new IllegalArgumentException("New estimate number already exists");
+            }
+            existing.setEstimateNo(data.getEstimateNo());
+        }
+
         existing.setEstimateDate(data.getEstimateDate());
         existing.setClientId(data.getClientId());
         existing.setClientName(data.getClientName());
@@ -75,10 +96,11 @@ public class EstimateServiceImpl implements EstimateService {
         existing.setTotal(data.getTotal());
         existing.setStatus(data.getStatus());
         existing.setNotes(data.getNotes());
+        
         return estimateRepository.save(existing);
     }
 
-    // --- PDF GENERATION ---
+    // --- PDF GENERATION (Unchanged logic, ensures manual Estimate No is used) ---
     @Override
     public byte[] generateEstimatePdf(String id) throws Exception {
         Estimate estimate = estimateRepository.findById(id).orElseThrow();
@@ -226,7 +248,6 @@ public class EstimateServiceImpl implements EstimateService {
              }
         }
 
-        // --- TOTAL ROW ---
         PdfPCell totalLabel = new PdfPCell(new Phrase("Total", FONT_BOLD));
         totalLabel.setColspan(6);
         totalLabel.setHorizontalAlignment(Element.ALIGN_RIGHT);
@@ -234,26 +255,22 @@ public class EstimateServiceImpl implements EstimateService {
         
         addRightCell(itemTable, String.format("%.0f", subTotal));
         addRightCell(itemTable, String.format("%.1f", totalTax));
-        // Added Total
+        
         PdfPCell grandTotalCell = new PdfPCell(new Phrase(String.format("%.2f", subTotal + totalTax), FONT_BOLD));
         grandTotalCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
         itemTable.addCell(grandTotalCell);
 
         document.add(itemTable);
 
-        // ============================================
-        // 4. FOOTER (Left: Terms & Bank, Right: Signature)
-        // ============================================
+        // 4. FOOTER
         PdfPTable footerTable = new PdfPTable(2);
         footerTable.setWidthPercentage(100);
-        footerTable.setWidths(new float[]{2, 1}); // 2:1 Ratio
+        footerTable.setWidths(new float[]{2, 1});
 
-        // --- LEFT COLUMN: TERMS + BANK ---
         PdfPCell leftContainer = new PdfPCell();
         leftContainer.setBorder(Rectangle.BOX);
         leftContainer.setPadding(0);
 
-        // A. Terms Table
         PdfPTable termsTable = new PdfPTable(2);
         termsTable.setWidthPercentage(100);
         termsTable.setWidths(new float[]{0.3f, 5});
@@ -294,12 +311,11 @@ public class EstimateServiceImpl implements EstimateService {
         
         leftContainer.addElement(termsTable);
 
-        // B. Bank Details (Below Terms)
         PdfPTable bankTable = new PdfPTable(1);
         bankTable.setWidthPercentage(100);
         
         PdfPCell bankCell = new PdfPCell();
-        bankCell.setBorder(Rectangle.TOP); // Separator line from terms
+        bankCell.setBorder(Rectangle.TOP);
         bankCell.setPadding(5);
         
         Paragraph bankP = new Paragraph();
@@ -315,20 +331,18 @@ public class EstimateServiceImpl implements EstimateService {
         
         footerTable.addCell(leftContainer);
 
-        // --- RIGHT COLUMN: SIGNATURE (Full Height) ---
         PdfPCell rightCell = new PdfPCell();
         rightCell.setBorder(Rectangle.BOX);
         rightCell.setPadding(0);
-        rightCell.setVerticalAlignment(Element.ALIGN_MIDDLE); // Key for vertical center
+        rightCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
         rightCell.setHorizontalAlignment(Element.ALIGN_CENTER);
         
-        // Use a table to force centering if cell alignment isn't enough
         PdfPTable signTable = new PdfPTable(1);
         signTable.setWidthPercentage(100);
         
         PdfPCell signInner = new PdfPCell();
         signInner.setBorder(Rectangle.NO_BORDER);
-        signInner.setMinimumHeight(150); // Ensure it matches height of left column roughly or stretches
+        signInner.setMinimumHeight(150);
         signInner.setVerticalAlignment(Element.ALIGN_MIDDLE);
         signInner.setHorizontalAlignment(Element.ALIGN_CENTER);
         
