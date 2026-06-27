@@ -10,6 +10,7 @@ public class InvoiceDTO {
     private String id;
     private String invoiceNo;
     private String clientId;
+    private String clientGst;
 
     // 👇 NEW: Address Snapshot
     private String billingAddress;
@@ -39,6 +40,7 @@ public class InvoiceDTO {
     @Data
     public static class InvoiceItemDTO {
         private String description;
+        
         
         // 👇 NEW: Item Specifics
         private String hsnCode;

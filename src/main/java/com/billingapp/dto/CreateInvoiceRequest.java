@@ -37,4 +37,5 @@ public class CreateInvoiceRequest {
     private String poNumber;
     private Instant poDate;
     private String invoiceNo;
+    private String clientGst; // 🟢 Added to store invoice-specific GST snapshot
 }

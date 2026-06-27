@@ -5,6 +5,9 @@ import com.billingapp.entity.Company;
 import com.billingapp.repository.ChallanRepository;
 import com.billingapp.repository.CompanyRepository;
 import com.lowagie.text.*;
+import com.lowagie.text.Font;
+import com.lowagie.text.Image;
+import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
@@ -75,7 +78,6 @@ public class ChallanPdfServiceImpl {
         document.add(title);
 
         // --- 2. MAIN INFO TABLE (Split into 2 Rows) ---
-        // Width Ratio 1.5 : 1 (60% : 40%)
         PdfPTable mainTable = new PdfPTable(2); 
         mainTable.setWidthPercentage(100);
         mainTable.setWidths(new float[]{1.5f, 1}); 
@@ -83,8 +85,6 @@ public class ChallanPdfServiceImpl {
         // ==========================================
         // ROW 1: COMPANY INFO (Left) + CHALLAN META (Right)
         // ==========================================
-        
-        // 1. Left Cell: Company Details
         PdfPCell companyCell = new PdfPCell();
         companyCell.setBorder(Rectangle.BOX);
         companyCell.setPadding(5);
@@ -92,78 +92,69 @@ public class ChallanPdfServiceImpl {
         companyCell.addElement(new Paragraph(company.getAddress(), FONT_NORMAL));
         companyCell.addElement(new Paragraph(company.getEmail(), new Font(Font.HELVETICA, 9, Font.NORMAL, Color.BLUE)));
         
-        // GST Line
         Paragraph pGst = new Paragraph();
         pGst.add(new Chunk("GST: " + company.getGstin(), FONT_BOLD));
         companyCell.addElement(pGst);
 
-        // Udyam in Next Line
         String udyam = company.getUdyamRegNo() != null ? company.getUdyamRegNo() : "-";
         Paragraph pUdyam = new Paragraph();
         pUdyam.add(new Chunk("UDYAM- " + udyam, FONT_BOLD));
         companyCell.addElement(pUdyam);
-        
         mainTable.addCell(companyCell);
 
-        // 2. Right Cell: Challan Meta Data
         PdfPCell metaCell1 = new PdfPCell();
         metaCell1.setBorder(Rectangle.BOX);
         metaCell1.setPadding(0);
         
         PdfPTable metaTable1 = new PdfPTable(2);
         metaTable1.setWidthPercentage(100);
-        
         metaTable1.addCell(createCell("Challan No:", challan.getChallanNo()));
         metaTable1.addCell(createCell("Date:", challan.getChallanDate() != null ? sdf.format(challan.getChallanDate()) : "-"));
         metaTable1.addCell(createCell("State:", "MAHARASHTRA"));
         metaTable1.addCell(createCell("Code:", "27"));
-        
         metaCell1.addElement(metaTable1);
         mainTable.addCell(metaCell1);
 
         // ==========================================
         // ROW 2: CLIENT INFO (Left) + ORDER META (Right)
         // ==========================================
-
-        // 3. Left Cell: Client Details
         PdfPCell clientCell = new PdfPCell();
         clientCell.setBorder(Rectangle.BOX);
         clientCell.setPadding(5);
         clientCell.addElement(new Paragraph(challan.getClientName(), FONT_BOLD));
         clientCell.addElement(new Paragraph(challan.getClientAddress(), FONT_NORMAL));
-        clientCell.addElement(new Paragraph("GST NO: " + challan.getClientGst(), FONT_NORMAL));
+        
+        // 🟢 defensive logic check for snapshot stability
+        String displayGst = (challan.getClientGst() != null && !challan.getClientGst().isBlank()) 
+                ? challan.getClientGst() 
+                : "-";
+        clientCell.addElement(new Paragraph("GST NO: " + displayGst, FONT_NORMAL));
         mainTable.addCell(clientCell);
 
-        // 4. Right Cell: Order & Contact Meta
         PdfPCell metaCell2 = new PdfPCell();
         metaCell2.setBorder(Rectangle.BOX);
         metaCell2.setPadding(0);
 
         PdfPTable metaTable2 = new PdfPTable(2);
         metaTable2.setWidthPercentage(100);
-
         metaTable2.addCell(createCell("Order:", challan.getOrderNo()));
         metaTable2.addCell(createCell("Date:", challan.getOrderDate() != null ? sdf.format(challan.getOrderDate()) : "-"));
         metaTable2.addCell(createCell("State.:", challan.getClientState()));
         metaTable2.addCell(createCell("Code:", challan.getClientStateCode()));
 
-        // Contact Row (Label)
         PdfPCell contactLabel = new PdfPCell(new Phrase("Contact:", FONT_BOLD));
         contactLabel.setBorder(Rectangle.BOX); 
         contactLabel.setPadding(3);
         metaTable2.addCell(contactLabel);
 
-        // Contact Row (Value with Mixed Font)
         PdfPCell contactVal = new PdfPCell();
         contactVal.setBorder(Rectangle.BOX);
         contactVal.setPadding(3);
-        // 👇 FIX: Added Vertical Alignment
         contactVal.setVerticalAlignment(Element.ALIGN_MIDDLE);
         
         Paragraph pLoc = new Paragraph();
         pLoc.add(new Chunk("Location: ", FONT_BOLD));
         pLoc.add(new Chunk((challan.getContactPerson() != null ? challan.getContactPerson() : ""), FONT_NORMAL));
-        
         contactVal.addElement(pLoc);
         metaTable2.addCell(contactVal);
 
@@ -173,10 +164,7 @@ public class ChallanPdfServiceImpl {
         document.add(mainTable);
 
         // --- 3. ITEMS TABLE ---
-        // Width Ratio 1.5 : 1 (60% : 40%)
-        // Left (0.8 + 5.2 = 6.0) : Right (1.5 + 1.5 + 1 = 4.0) -> Ratio 6:4 = 1.5:1
         float[] itemWidths = {0.8f, 5.2f, 1.5f, 1.5f, 1f}; 
-        
         PdfPTable itemTable = new PdfPTable(itemWidths);
         itemTable.setWidthPercentage(100);
         itemTable.setSpacingBefore(0); 
@@ -208,7 +196,6 @@ public class ChallanPdfServiceImpl {
              itemTable.addCell(createEmptyCell());
              itemTable.addCell(createEmptyCell());
         }
-
         document.add(itemTable);
 
         // --- 4. FOOTER ---
@@ -216,14 +203,12 @@ public class ChallanPdfServiceImpl {
         footer.setWidthPercentage(100);
         footer.setSpacingBefore(20);
 
-        // Left Side
         PdfPCell receiver = new PdfPCell(new Phrase("Receiver's Signature with Rubber Stamp", new Font(Font.HELVETICA, 10, Font.UNDERLINE)));
         receiver.setBorder(Rectangle.NO_BORDER);
         receiver.setVerticalAlignment(Element.ALIGN_BOTTOM);
         receiver.setPaddingTop(30);
         footer.addCell(receiver);
 
-        // Right Side
         PdfPCell prop = new PdfPCell();
         prop.setBorder(Rectangle.NO_BORDER);
         
@@ -238,11 +223,9 @@ public class ChallanPdfServiceImpl {
         Paragraph pProp = new Paragraph("PROPRIETOR", FONT_BOLD);
         pProp.setAlignment(Element.ALIGN_RIGHT); 
         prop.addElement(pProp);
-        
         footer.addCell(prop);
 
         document.add(footer);
-
         document.close();
         return out.toByteArray();
     }

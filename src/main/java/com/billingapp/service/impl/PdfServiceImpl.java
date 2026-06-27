@@ -13,7 +13,6 @@ import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import org.springframework.stereotype.Service;
-import com.lowagie.text.Image;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
@@ -52,8 +51,10 @@ public class PdfServiceImpl implements PdfService {
                 .orElse(new Client()); 
         
         String clientName = client.getName() != null ? client.getName() : "Unknown Client";
-        String clientGst = client.getGstin() != null ? client.getGstin() : "-";
-        
+        // 🟢 FIX: Check the invoice snapshot field first; fall back to master client record if empty
+        String clientGst = invoice.getClientGst() != null && !invoice.getClientGst().isBlank() 
+        ? invoice.getClientGst() 
+        :(client.getGstin() != null ? client.getGstin() : "");
         String clientState = client.getState() != null ? client.getState() : "-";
         String clientStateCode = client.getStateCode() != null ? client.getStateCode() : "27";
 

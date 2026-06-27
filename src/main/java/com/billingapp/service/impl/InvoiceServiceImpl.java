@@ -98,6 +98,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             existing.setTax(req.getTax());
             existing.setTotal(existing.getSubtotal() + req.getTax());
         }
+        if (req.getClientGst() != null) existing.setClientGst(req.getClientGst()); // 🟢 Update snapshot
 
         // 2. Update Standard Fields
         
@@ -202,36 +203,4 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
     }
 
-    /* 👇 COMMENTED OUT: Auto Increment Logic
-    private String generateInvoiceNumber() {
-        LocalDate now = LocalDate.now();
-        int year = now.getYear();
-        int month = now.getMonthValue();
-
-        String fy;
-        if (month <= 3) {
-            fy = (year - 1) + "-" + String.valueOf(year).substring(2); 
-        } else {
-            fy = year + "-" + String.valueOf(year + 1).substring(2); 
-        }
-
-        String prefix = "JMD/" + fy + "/";
-        Optional<Invoice> lastInvoice = invoiceRepository.findTopByInvoiceNoStartingWithOrderByCreatedAtDesc(prefix);
-
-        int nextNum = 1;
-        if (lastInvoice.isPresent()) {
-            String lastNo = lastInvoice.get().getInvoiceNo();
-            String[] parts = lastNo.split("/");
-            if (parts.length == 3) {
-                try {
-                    int lastSeq = Integer.parseInt(parts[2]);
-                    nextNum = lastSeq + 1;
-                } catch (NumberFormatException e) {
-                    nextNum = 1;
-                }
-            }
-        }
-        return prefix + nextNum;
-    }
-    */
 }

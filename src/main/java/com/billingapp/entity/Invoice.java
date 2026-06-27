@@ -43,6 +43,7 @@ public class Invoice {
     private Instant challanDate;
     private String poNumber;      // Purchase Order No
     private Instant poDate;
+    private String clientGst;
 
     // attachments
     @Builder.Default

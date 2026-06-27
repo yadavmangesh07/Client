@@ -48,6 +48,7 @@ public class InvoiceMapper {
         Invoice invoice = Invoice.builder()
                 .invoiceNo(req.getInvoiceNo())
                 .clientId(req.getClientId())
+                .clientGst(req.getClientGst())
                 
                 // Map new fields
                 .billingAddress(req.getBillingAddress())
