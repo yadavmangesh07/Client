@@ -24,6 +24,7 @@ public class Estimate {
     private String clientName;
     private String billingAddress; // Stored snapshot
     private String gstin;
+    private String clientGst;
     private String attention;
 
     private String subject;        // e.g. "PROJECT LOCATION : NYKAA LUXE..."
@@ -46,6 +47,7 @@ public class Estimate {
     public static class EstimateItem {
         private String description;
         private String hsnCode;
+        
         
         // 👇 CHANGED: 'totalUnit' -> 'unit' to match Frontend Interface
         private String unit; 

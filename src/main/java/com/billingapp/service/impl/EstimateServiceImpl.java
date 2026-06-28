@@ -50,25 +50,13 @@ public class EstimateServiceImpl implements EstimateService {
 
     @Override
     public Estimate createEstimate(Estimate estimate) {
-        // 🟢 MANUAL CHANGE: Validate that a manual estimate number was provided
         if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isBlank()) {
             throw new IllegalArgumentException("Estimate number is required for manual entry");
         }
 
-        // 🟢 MANUAL CHANGE: Check for uniqueness in the database
         if (estimateRepository.existsByEstimateNo(estimate.getEstimateNo())) {
             throw new IllegalArgumentException("Estimate number " + estimate.getEstimateNo() + " already exists");
         }
-
-        /* 👇 COMMENTED OUT: Auto-generation logic is no longer used.
-        if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isEmpty()) {
-            java.time.LocalDate now = java.time.LocalDate.now();
-            int currentYear = now.getYear();
-            String finYear = (now.getMonthValue() >= 4) ? currentYear + "-" + (currentYear + 1 - 2000) : (currentYear - 1) + "-" + (currentYear - 2000);
-            long count = estimateRepository.count() + 1;
-            estimate.setEstimateNo("JMD/" + finYear + "/" + (140 + count));
-        }
-        */
 
         return estimateRepository.save(estimate);
     }
@@ -77,7 +65,6 @@ public class EstimateServiceImpl implements EstimateService {
     public Estimate updateEstimate(String id, Estimate data) {
         Estimate existing = estimateRepository.findById(id).orElseThrow();
         
-        // 🟢 MANUAL CHANGE: Allow manual update of estimate number with uniqueness check
         if (data.getEstimateNo() != null && !data.getEstimateNo().equals(existing.getEstimateNo())) {
             if (estimateRepository.existsByEstimateNo(data.getEstimateNo())) {
                 throw new IllegalArgumentException("New estimate number already exists");
@@ -89,6 +76,12 @@ public class EstimateServiceImpl implements EstimateService {
         existing.setClientId(data.getClientId());
         existing.setClientName(data.getClientName());
         existing.setBillingAddress(data.getBillingAddress());
+        
+        // 🟢 FIX: Map snapshot tracking data over from incoming request
+        if (data.getClientGst() != null) {
+            existing.setClientGst(data.getClientGst());
+        }
+        
         existing.setSubject(data.getSubject());
         existing.setItems(data.getItems());
         existing.setSubTotal(data.getSubTotal());
@@ -100,7 +93,6 @@ public class EstimateServiceImpl implements EstimateService {
         return estimateRepository.save(existing);
     }
 
-    // --- PDF GENERATION (Unchanged logic, ensures manual Estimate No is used) ---
     @Override
     public byte[] generateEstimatePdf(String id) throws Exception {
         Estimate estimate = estimateRepository.findById(id).orElseThrow();
@@ -184,10 +176,13 @@ public class EstimateServiceImpl implements EstimateService {
         addCell(infoTable, "REF", FONT_BOLD, Color.WHITE, 1);
         addCell(infoTable, estimate.getEstimateNo(), FONT_NORMAL, Color.WHITE, 1);
 
-        String clientGst = estimate.getGstin() != null ? estimate.getGstin() : (client.getGstin() != null ? client.getGstin() : "");
+        // 🟢 FIX: Point compiler to read getClientGst() snapshot variable instead of getGstin()
+        String activeGst = estimate.getClientGst() != null && !estimate.getClientGst().isBlank() 
+            ? estimate.getClientGst() 
+            : (client.getGstin() != null ? client.getGstin() : "");
         
-        addCell(infoTable, "CLIENT GSTIN: " + clientGst, FONT_BOLD, Color.WHITE, 1);
-        addCell(infoTable, "CLIENT GSTIN: " + clientGst, FONT_BOLD, Color.WHITE, 1);
+        addCell(infoTable, "CLIENT GSTIN: " + activeGst, FONT_BOLD, Color.WHITE, 1);
+        addCell(infoTable, "CLIENT GSTIN: " + activeGst, FONT_BOLD, Color.WHITE, 1);
         
         addCell(infoTable, "Date", FONT_BOLD, Color.WHITE, 1);
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("M/d/yy").withZone(ZoneId.systemDefault());
@@ -209,7 +204,7 @@ public class EstimateServiceImpl implements EstimateService {
         String[] headers = {"Sr\nNo.", "Description", "HSN\nCode", "Total\nUnit", "Qty", "Rate", "Amount", "IGST\n18%", "Total Amount"};
         for(String h : headers) {
             PdfPCell c = new PdfPCell(new Phrase(h, FONT_SMALL_BOLD));
-            c.setBackgroundColor(new Color(255, 255, 100)); // Yellow
+            c.setBackgroundColor(new Color(255, 255, 100)); 
             c.setHorizontalAlignment(Element.ALIGN_CENTER);
             c.setVerticalAlignment(Element.ALIGN_MIDDLE);
             c.setPadding(3);
@@ -368,7 +363,6 @@ public class EstimateServiceImpl implements EstimateService {
         return out.toByteArray();
     }
 
-    // --- HELPER METHODS ---
     private void addCell(PdfPTable table, String text, Font font, Color bg, int colspan) {
         PdfPCell cell = new PdfPCell(new Phrase(text, font));
         cell.setBackgroundColor(bg);
