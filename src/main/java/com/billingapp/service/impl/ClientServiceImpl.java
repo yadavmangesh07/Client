@@ -11,7 +11,10 @@ import com.billingapp.repository.ClientRepository;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.repository.WorkCompletionCertificateRepository;
 import com.billingapp.service.ClientService;
-import lombok.extern.slf4j.Slf4j; // 👈 1. Added SLF4J Import
+import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -24,7 +27,7 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-@Slf4j // 👈 2. Added SLF4J Annotation
+@Slf4j
 @Service
 @Transactional
 public class ClientServiceImpl implements ClientService {
@@ -48,8 +51,9 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
+    @CacheEvict(value = "clients", allEntries = true) // 🟢 Flushes master list cache entries on change
     public ClientDTO create(CreateClientRequest req) {
-        log.info("Creating new client with name: {}", req.getName()); // 👈 Log creation start
+        log.info("Creating new client with name: {}", req.getName());
         Client client = Client.builder()
                 .name(req.getName())
                 .email(req.getEmail())
@@ -65,16 +69,17 @@ public class ClientServiceImpl implements ClientService {
                 .build();
 
         Client saved = clientRepository.save(client);
-        log.info("Client successfully created with ID: {}", saved.getId()); // 👈 Log success
+        log.info("Client successfully created with ID: {}", saved.getId());
         return mapper.toDto(saved);
     }
 
     @Override
+    @CacheEvict(value = "clients", allEntries = true) // 🟢 Evicts old cache data on profile changes
     public ClientDTO update(String id, CreateClientRequest req) {
         log.info("Updating client profile for ID: {}", id);
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> {
-                    log.warn("Update failed: Client ID {} not found", id); // 👈 Log warning for bad IDs
+                    log.warn("Update failed: Client ID {} not found", id);
                     return new IllegalArgumentException("Client not found: " + id);
                 });
         
@@ -95,7 +100,9 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
+    @Cacheable(value = "clients", key = "#id") // 🟢 Caches specific individual single data rows
     public ClientDTO getById(String id) {
+        log.info("Fetching client data from DB for ID: {}", id);
         return clientRepository.findById(id)
                 .map(mapper::toDto)
                 .orElseThrow(() -> {
@@ -105,9 +112,10 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
+    @Cacheable(value = "clients", key = "'profile-' + #clientId") // 🟢 Bypasses heavy multi-repo threads if loaded recently
     public ClientProfileDTO getClientProfile(String clientId) {
-        log.info("Assembling profile for client: {}", clientId);
-        long startTime = System.currentTimeMillis(); // 👈 Start timer
+        log.info("Assembling dynamic profile map from repositories for client: {}", clientId);
+        long startTime = System.currentTimeMillis();
 
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> {
@@ -162,10 +170,10 @@ public class ClientServiceImpl implements ClientService {
             dto.setStats(stats);
             
             long endTime = System.currentTimeMillis();
-            log.info("Profile assembly for {} took {} ms", client.getName(), (endTime - startTime)); // 👈 Performance log
+            log.info("Profile assembly for {} took {} ms", client.getName(), (endTime - startTime));
 
         } catch (Exception e) {
-            log.error("Critical error assembling profile for client {}: {}", clientId, e.getMessage()); // 👈 Error log
+            log.error("Critical error assembling profile for client {}: {}", clientId, e.getMessage());
             throw new RuntimeException("Error assembling client profile", e);
         }
 
@@ -173,15 +181,18 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
+    @Cacheable(value = "clients")
     public List<ClientDTO> getAll() {
+        log.info("Fetching master collection list of clients from database...");
         return clientRepository.findAll().stream()
                 .map(mapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Override
+    @CacheEvict(value = "clients", allEntries = true) // 🟢 Invalidates cache keys entirely upon deletion
     public void delete(String id) {
-        log.warn("Request received to DELETE client ID: {}", id); // 👈 Warn for destructive actions
+        log.warn("Request received to DELETE client ID: {}", id);
         clientRepository.deleteById(id);
         log.info("Client ID: {} successfully deleted", id);
     }

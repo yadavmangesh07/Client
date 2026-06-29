@@ -9,6 +9,8 @@ import com.billingapp.repository.EstimateRepository;
 import com.billingapp.service.EstimateService;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -42,13 +44,19 @@ public class EstimateServiceImpl implements EstimateService {
     }
 
     @Override
+    @Cacheable(value = "estimates") // 🟢 Caches master list of quotations
     public List<Estimate> getAllEstimates() { return estimateRepository.findAll(); }
+
     @Override
+    @Cacheable(value = "estimates", key = "#id") // 🟢 Caches single estimate entity entries
     public Estimate getEstimateById(String id) { return estimateRepository.findById(id).orElseThrow(); }
+
     @Override
+    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Drops stale cache keys completely upon document drop
     public void deleteEstimate(String id) { estimateRepository.deleteById(id); }
 
     @Override
+    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Flushes old state when writing a new quotation record
     public Estimate createEstimate(Estimate estimate) {
         if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isBlank()) {
             throw new IllegalArgumentException("Estimate number is required for manual entry");
@@ -62,6 +70,7 @@ public class EstimateServiceImpl implements EstimateService {
     }
 
     @Override
+    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Enforces cache evictions across modifications
     public Estimate updateEstimate(String id, Estimate data) {
         Estimate existing = estimateRepository.findById(id).orElseThrow();
         
@@ -77,7 +86,6 @@ public class EstimateServiceImpl implements EstimateService {
         existing.setClientName(data.getClientName());
         existing.setBillingAddress(data.getBillingAddress());
         
-        // 🟢 FIX: Map snapshot tracking data over from incoming request
         if (data.getClientGst() != null) {
             existing.setClientGst(data.getClientGst());
         }
@@ -94,6 +102,7 @@ public class EstimateServiceImpl implements EstimateService {
     }
 
     @Override
+    @Cacheable(value = "estimates", key = "'pdf-' + #id") // 🟢 Highly Optimized: Caches the heavy compiled PDF byte arrays to drastically speed up repeated viewings/downloads
     public byte[] generateEstimatePdf(String id) throws Exception {
         Estimate estimate = estimateRepository.findById(id).orElseThrow();
         Client client = clientRepository.findById(estimate.getClientId()).orElse(new Client());
@@ -176,7 +185,6 @@ public class EstimateServiceImpl implements EstimateService {
         addCell(infoTable, "REF", FONT_BOLD, Color.WHITE, 1);
         addCell(infoTable, estimate.getEstimateNo(), FONT_NORMAL, Color.WHITE, 1);
 
-        // 🟢 FIX: Point compiler to read getClientGst() snapshot variable instead of getGstin()
         String activeGst = estimate.getClientGst() != null && !estimate.getClientGst().isBlank() 
             ? estimate.getClientGst() 
             : (client.getGstin() != null ? client.getGstin() : "");

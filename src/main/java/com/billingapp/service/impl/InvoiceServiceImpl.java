@@ -7,6 +7,8 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.mapper.InvoiceMapper;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.InvoiceService;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.*;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -35,27 +37,21 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
+    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Flushes invoice lists on new creation
     public InvoiceDTO create(CreateInvoiceRequest req) {
         if (req.getItems() == null || req.getItems().isEmpty()) {
             throw new IllegalArgumentException("Invoice must have at least one item");
         }
 
-        // 🟢 MANUAL CHANGE: Validate manual invoice number
         if (req.getInvoiceNo() == null || req.getInvoiceNo().isBlank()) {
             throw new IllegalArgumentException("Invoice number is required for manual entry");
         }
 
-        // 🟢 MANUAL CHANGE: Check for uniqueness
         if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
             throw new IllegalArgumentException("Invoice number " + req.getInvoiceNo() + " already exists");
         }
 
         Invoice invoice = mapper.toEntity(req);
-        
-        // 👇 COMMENTED OUT: Auto-generation logic
-        // invoice.setInvoiceNo(generateInvoiceNumber());
-        
-        // 🟢 MANUAL CHANGE: Number is now taken directly from the request/mapper
         invoice.setInvoiceNo(req.getInvoiceNo());
 
         double subtotal = computeSubtotalFromItems(req.getItems());
@@ -71,6 +67,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
+    @Cacheable(value = "invoices", key = "#id") // 🟢 Caches individual invoices by database ID
     public InvoiceDTO getById(String id) {
         Invoice inv = invoiceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + id));
@@ -78,11 +75,13 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
+    @Cacheable(value = "invoices") // 🟢 Caches the comprehensive historical lookup lists
     public List<InvoiceDTO> getAll() {
         return invoiceRepository.findAll().stream().map(mapper::toDto).collect(Collectors.toList());
     }
 
     @Override
+    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Evicts old state on document recalculations/updates
     public InvoiceDTO update(String id, CreateInvoiceRequest req) {
         Invoice existing = invoiceRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + id));
@@ -98,11 +97,9 @@ public class InvoiceServiceImpl implements InvoiceService {
             existing.setTax(req.getTax());
             existing.setTotal(existing.getSubtotal() + req.getTax());
         }
-        if (req.getClientGst() != null) existing.setClientGst(req.getClientGst()); // 🟢 Update snapshot
+        if (req.getClientGst() != null) existing.setClientGst(req.getClientGst());
 
         // 2. Update Standard Fields
-        
-        // 🟢 MANUAL CHANGE: Handle manual invoice number updates
         if (req.getInvoiceNo() != null && !req.getInvoiceNo().equals(existing.getInvoiceNo())) {
             if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
                 throw new IllegalArgumentException("New invoice number already exists");
@@ -132,6 +129,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
+    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Drops stale entry tags on removals
     public void delete(String id) {
         if (!invoiceRepository.existsById(id)) {
             throw new IllegalArgumentException("Invoice not found: " + id);
@@ -142,7 +140,7 @@ public class InvoiceServiceImpl implements InvoiceService {
     @Override
     public Page<InvoiceDTO> search(String clientId, String status, String fromIso, String toIso,
                                    Double minTotal, Double maxTotal, int page, int size, String sort) {
-
+        // Dynamic complex multi-criteria filters pass directly through to MongoDB template uncached
         if (page < 0) page = 0;
         if (size <= 0) size = 10;
         Sort s = parseSort(sort, Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -202,5 +200,4 @@ public class InvoiceServiceImpl implements InvoiceService {
             return defaultSort;
         }
     }
-
 }
