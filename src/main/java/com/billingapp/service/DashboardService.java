@@ -3,6 +3,8 @@ package com.billingapp.service;
 import com.billingapp.entity.Invoice;
 import com.billingapp.repository.ClientRepository;
 import com.billingapp.repository.InvoiceRepository;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -22,6 +24,7 @@ public class DashboardService {
         this.clientRepository = clientRepository;
     }
 
+    @Cacheable(value = "dashboard") // 🟢 Caches heavy, parallelized map aggregation blocks in JVM memory
     public Map<String, Object> getDashboardStats() {
         // 1. Define all tasks to run in PARALLEL
         
@@ -56,7 +59,6 @@ public class DashboardService {
         );
 
         // Task G: Chart Data (Fetch All)
-        // Note: For massive scale (10k+), we should move this logic to MongoDB Aggregation
         CompletableFuture<List<Invoice>> allInvoicesTask = CompletableFuture.supplyAsync(() -> 
             invoiceRepository.findAll()
         );
@@ -91,7 +93,17 @@ public class DashboardService {
         return stats;
     }
 
-    // --- Helper Method (Same as before) ---
+    /**
+     * 🟢 Eviction Handle: Drops dashboard entries completely.
+     * Invoke this explicit programmatic method inside mutations within your ClientService,
+     * InvoiceService, EstimateService, etc.
+     */
+    @CacheEvict(value = "dashboard", allEntries = true)
+    public void clearDashboardCache() {
+        // Method body can remain blank; annotation automatically cleans the target cache context space
+    }
+
+    // --- Helper Method ---
     private List<Map<String, Object>> calculateMonthlyStats(List<Invoice> invoices) {
         Map<String, Double> tempMap = new LinkedHashMap<>();
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("MMM");
