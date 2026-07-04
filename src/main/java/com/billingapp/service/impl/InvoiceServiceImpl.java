@@ -7,6 +7,7 @@ import com.billingapp.entity.Invoice;
 import com.billingapp.mapper.InvoiceMapper;
 import com.billingapp.repository.InvoiceRepository;
 import com.billingapp.service.InvoiceService;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.*;
@@ -22,6 +23,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @Transactional
 public class InvoiceServiceImpl implements InvoiceService {
@@ -37,17 +39,22 @@ public class InvoiceServiceImpl implements InvoiceService {
     }
 
     @Override
-    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Flushes invoice lists on new creation
+    @CacheEvict(value = "invoices", allEntries = true) // Flushes invoice lists on new creation
     public InvoiceDTO create(CreateInvoiceRequest req) {
+        log.info("Attempting to create Invoice document record: {}", req.getInvoiceNo());
+        
         if (req.getItems() == null || req.getItems().isEmpty()) {
+            log.warn("Invoice creation aborted: payload items array collection is empty");
             throw new IllegalArgumentException("Invoice must have at least one item");
         }
 
         if (req.getInvoiceNo() == null || req.getInvoiceNo().isBlank()) {
+            log.warn("Invoice creation aborted: missing alphanumeric identifier entry reference code");
             throw new IllegalArgumentException("Invoice number is required for manual entry");
         }
 
         if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
+            log.warn("Invoice creation aborted: tracking identifier target code {} already exists in system context", req.getInvoiceNo());
             throw new IllegalArgumentException("Invoice number " + req.getInvoiceNo() + " already exists");
         }
 
@@ -63,28 +70,39 @@ public class InvoiceServiceImpl implements InvoiceService {
         if (invoice.getIssuedAt() == null) invoice.setIssuedAt(Instant.now());
 
         Invoice saved = invoiceRepository.save(invoice);
+        log.info("Invoice tracking token successfully written to collection persistence storage layer with inner record ID: {}", saved.getId());
         return mapper.toDto(saved);
     }
 
     @Override
-    @Cacheable(value = "invoices", key = "#id") // 🟢 Caches individual invoices by database ID
+    @Cacheable(value = "invoices", key = "#id") // Caches individual invoices by database ID
     public InvoiceDTO getById(String id) {
+        log.debug("Executing structured data mapping find lookup query for instance token key parameter ID: {}", id);
         Invoice inv = invoiceRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + id));
+                .orElseThrow(() -> {
+                    log.error("Data lookup request failed: Invoice record signature ID {} is missing or non-existent", id);
+                    return new IllegalArgumentException("Invoice not found: " + id);
+                });
         return mapper.toDto(inv);
     }
 
     @Override
-    @Cacheable(value = "invoices") // 🟢 Caches the comprehensive historical lookup lists
+    @Cacheable(value = "invoices") // Caches the comprehensive historical lookup lists
     public List<InvoiceDTO> getAll() {
+        log.debug("Executing collective historical dump vector query against transaction logging datasets");
         return invoiceRepository.findAll().stream().map(mapper::toDto).collect(Collectors.toList());
     }
 
     @Override
-    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Evicts old state on document recalculations/updates
+    @CacheEvict(value = "invoices", allEntries = true) // Evicts old state on document recalculations/updates
     public InvoiceDTO update(String id, CreateInvoiceRequest req) {
+        log.info("Attempting to commit transaction modification delta configurations on entry entity database reference ID: {}", id);
+        
         Invoice existing = invoiceRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Invoice not found: " + id));
+                .orElseThrow(() -> {
+                    log.error("Update payload configuration rejected: target mapping entity matching code ID {} doesn't exist", id);
+                    return new IllegalArgumentException("Invoice not found: " + id);
+                });
 
         // 1. Update Items & Totals
         if (req.getItems() != null && !req.getItems().isEmpty()) {
@@ -102,6 +120,7 @@ public class InvoiceServiceImpl implements InvoiceService {
         // 2. Update Standard Fields
         if (req.getInvoiceNo() != null && !req.getInvoiceNo().equals(existing.getInvoiceNo())) {
             if (invoiceRepository.existsByInvoiceNo(req.getInvoiceNo())) {
+                log.warn("Update mutation failed: collision vector triggered for modification code {}", req.getInvoiceNo());
                 throw new IllegalArgumentException("New invoice number already exists");
             }
             existing.setInvoiceNo(req.getInvoiceNo());
@@ -125,22 +144,27 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         existing.setUpdatedAt(Instant.now());
         Invoice saved = invoiceRepository.save(existing);
+        log.info("Invoice state modifications for target document identity matching ID {} successfully persisted", id);
         return mapper.toDto(saved);
     }
 
     @Override
-    @CacheEvict(value = "invoices", allEntries = true) // 🟢 Drops stale entry tags on removals
+    @CacheEvict(value = "invoices", allEntries = true) // Drops stale entry tags on removals
     public void delete(String id) {
+        log.info("Initiating structural row cache eviction sequence for entry object collection token context code ID: {}", id);
         if (!invoiceRepository.existsById(id)) {
+            log.error("Eviction request aborted: deletion reference target key ID {} cannot be verified as existing", id);
             throw new IllegalArgumentException("Invoice not found: " + id);
         }
         invoiceRepository.deleteById(id);
+        log.info("Entity index successfully dropped for row ID: {}", id);
     }
 
     @Override
     public Page<InvoiceDTO> search(String clientId, String status, String fromIso, String toIso,
                                    Double minTotal, Double maxTotal, int page, int size, String sort) {
-        // Dynamic complex multi-criteria filters pass directly through to MongoDB template uncached
+        log.debug("Executing dynamic multi-criteria parameter aggregate pipeline search filters");
+        
         if (page < 0) page = 0;
         if (size <= 0) size = 10;
         Sort s = parseSort(sort, Sort.by(Sort.Direction.DESC, "createdAt"));
@@ -164,13 +188,17 @@ public class InvoiceServiceImpl implements InvoiceService {
             try {
                 Instant from = Instant.parse(fromIso);
                 criterias.add(Criteria.where("createdAt").gte(from));
-            } catch (DateTimeParseException ignored) {}
+            } catch (DateTimeParseException ignored) {
+                log.debug("Bypassing query date parameter parsing rule constraints: invalid fallback ISO string payload layout metadata: {}", fromIso);
+            }
         }
         if (toIso != null && !toIso.isBlank()) {
             try {
                 Instant to = Instant.parse(toIso);
                 criterias.add(Criteria.where("createdAt").lte(to));
-            } catch (DateTimeParseException ignored) {}
+            } catch (DateTimeParseException ignored) {
+                log.debug("Bypassing query date parameter parsing rule constraints: invalid fallback ISO string payload layout metadata: {}", toIso);
+            }
         }
         if (minTotal != null) criterias.add(Criteria.where("total").gte(minTotal));
         if (maxTotal != null) criterias.add(Criteria.where("total").lte(maxTotal));
@@ -197,6 +225,7 @@ public class InvoiceServiceImpl implements InvoiceService {
             Sort.Direction dir = (parts.length > 1 && parts[1].equalsIgnoreCase("asc")) ? Sort.Direction.ASC : Sort.Direction.DESC;
             return Sort.by(dir, prop);
         } catch (Exception e) {
+            log.debug("Gracefully handling sort evaluation format failure; reverting data alignment query indexing array context to default rules");
             return defaultSort;
         }
     }

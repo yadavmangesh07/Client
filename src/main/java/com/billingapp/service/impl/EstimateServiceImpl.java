@@ -9,6 +9,7 @@ import com.billingapp.repository.EstimateRepository;
 import com.billingapp.service.EstimateService;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
@@ -20,6 +21,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+@Slf4j
 @Service
 public class EstimateServiceImpl implements EstimateService {
 
@@ -44,38 +46,67 @@ public class EstimateServiceImpl implements EstimateService {
     }
 
     @Override
-    @Cacheable(value = "estimates") // 🟢 Caches master list of quotations
-    public List<Estimate> getAllEstimates() { return estimateRepository.findAll(); }
+    @Cacheable(value = "estimates") // Caches master list of quotations
+    public List<Estimate> getAllEstimates() { 
+        log.debug("Executing full list lookup query for all estimate records");
+        return estimateRepository.findAll(); 
+    }
 
     @Override
-    @Cacheable(value = "estimates", key = "#id") // 🟢 Caches single estimate entity entries
-    public Estimate getEstimateById(String id) { return estimateRepository.findById(id).orElseThrow(); }
+    @Cacheable(value = "estimates", key = "#id") // Caches single estimate entity entries
+    public Estimate getEstimateById(String id) { 
+        log.debug("Executing find lookup query for Estimate matching reference signature ID: {}", id);
+        return estimateRepository.findById(id).orElseThrow(() -> {
+            log.error("Data lookup request failed: Estimate record signature ID {} is non-existent", id);
+            return new IllegalArgumentException("Estimate not found: " + id);
+        });
+    }
 
     @Override
-    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Drops stale cache keys completely upon document drop
-    public void deleteEstimate(String id) { estimateRepository.deleteById(id); }
+    @CacheEvict(value = "estimates", allEntries = true) // Drops stale cache keys completely upon document drop
+    public void deleteEstimate(String id) { 
+        log.info("Initiating structural row cache eviction sequence for Estimate context code ID: {}", id);
+        if (!estimateRepository.existsById(id)) {
+            log.error("Eviction request aborted: deletion reference target key ID {} cannot be verified", id);
+            throw new IllegalArgumentException("Estimate not found: " + id);
+        }
+        estimateRepository.deleteById(id);
+        log.info("Estimate index successfully dropped for row ID: {}", id);
+    }
 
     @Override
-    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Flushes old state when writing a new quotation record
+    @CacheEvict(value = "estimates", allEntries = true) // Flushes old state when writing a new quotation record
     public Estimate createEstimate(Estimate estimate) {
+        log.info("Attempting to create Estimate document record: {}", estimate.getEstimateNo());
+        
         if (estimate.getEstimateNo() == null || estimate.getEstimateNo().isBlank()) {
+            log.warn("Estimate creation aborted: missing alphanumeric identifier entry reference code");
             throw new IllegalArgumentException("Estimate number is required for manual entry");
         }
 
         if (estimateRepository.existsByEstimateNo(estimate.getEstimateNo())) {
+            log.warn("Estimate creation aborted: tracking identifier target code {} already exists", estimate.getEstimateNo());
             throw new IllegalArgumentException("Estimate number " + estimate.getEstimateNo() + " already exists");
         }
 
-        return estimateRepository.save(estimate);
+        Estimate saved = estimateRepository.save(estimate);
+        log.info("Estimate tracking token successfully written to storage layer with inner record ID: {}", saved.getId());
+        return saved;
     }
 
     @Override
-    @CacheEvict(value = "estimates", allEntries = true) // 🟢 Enforces cache evictions across modifications
+    @CacheEvict(value = "estimates", allEntries = true) // Enforces cache evictions across modifications
     public Estimate updateEstimate(String id, Estimate data) {
-        Estimate existing = estimateRepository.findById(id).orElseThrow();
+        log.info("Attempting to commit transaction modification delta configurations on Estimate reference ID: {}", id);
+        
+        Estimate existing = estimateRepository.findById(id).orElseThrow(() -> {
+            log.error("Update payload rejected: target mapping entity matching code ID {} doesn't exist", id);
+            return new IllegalArgumentException("Estimate not found: " + id);
+        });
         
         if (data.getEstimateNo() != null && !data.getEstimateNo().equals(existing.getEstimateNo())) {
             if (estimateRepository.existsByEstimateNo(data.getEstimateNo())) {
+                log.warn("Update mutation failed: collision vector triggered for modification code {}", data.getEstimateNo());
                 throw new IllegalArgumentException("New estimate number already exists");
             }
             existing.setEstimateNo(data.getEstimateNo());
@@ -98,13 +129,20 @@ public class EstimateServiceImpl implements EstimateService {
         existing.setStatus(data.getStatus());
         existing.setNotes(data.getNotes());
         
-        return estimateRepository.save(existing);
+        Estimate saved = estimateRepository.save(existing);
+        log.info("Estimate state modifications for target document identity matching ID {} successfully persisted", id);
+        return saved;
     }
 
     @Override
-    @Cacheable(value = "estimates", key = "'pdf-' + #id") // 🟢 Highly Optimized: Caches the heavy compiled PDF byte arrays to drastically speed up repeated viewings/downloads
+    @Cacheable(value = "estimates", key = "'pdf-' + #id") // Highly Optimized: Caches the heavy compiled PDF byte arrays to drastically speed up repeated viewings/downloads
     public byte[] generateEstimatePdf(String id) throws Exception {
-        Estimate estimate = estimateRepository.findById(id).orElseThrow();
+        log.info("Initiating structural PDF generation engine context pipeline for Estimate token ID: {}", id);
+        
+        Estimate estimate = estimateRepository.findById(id).orElseThrow(() -> {
+            log.error("PDF engine pipeline aborted: document reference entity mapping code ID {} non-existent", id);
+            return new IllegalArgumentException("Estimate not found: " + id);
+        });
         Client client = clientRepository.findById(estimate.getClientId()).orElse(new Client());
         Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
 
@@ -368,6 +406,7 @@ public class EstimateServiceImpl implements EstimateService {
         document.add(footerTable);
 
         document.close();
+        log.info("PDF generation successfully completed for Estimate ID: {}", id);
         return out.toByteArray();
     }
 

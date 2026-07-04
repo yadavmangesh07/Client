@@ -10,6 +10,7 @@ import com.billingapp.service.CreditNoteService;
 import com.billingapp.service.DashboardService;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -24,6 +25,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+@Slf4j
 @Service
 @Transactional
 public class CreditNoteServiceImpl implements CreditNoteService {
@@ -46,15 +48,19 @@ public class CreditNoteServiceImpl implements CreditNoteService {
     @Override
     @CacheEvict(value = "credit_notes", allEntries = true)
     public CreditNote create(CreditNote cn) {
+        log.info("Attempting to create Credit Note profile record: {}", cn.getCreditNoteNo());
         if (cn.getCreditNoteNo() == null || cn.getCreditNoteNo().isBlank()) {
+            log.warn("Credit Note creation aborted: missing transaction document reference code");
             throw new IllegalArgumentException("Credit Note number is required");
         }
         if (creditNoteRepository.existsByCreditNoteNo(cn.getCreditNoteNo())) {
+            log.warn("Credit Note creation aborted: tracking identifier target code {} already exists", cn.getCreditNoteNo());
             throw new IllegalArgumentException("Credit Note number already exists");
         }
         cn.setCreatedAt(Instant.now());
         cn.setUpdatedAt(Instant.now());
         CreditNote saved = creditNoteRepository.save(cn);
+        log.info("Credit Note tracking token successfully written to storage layer with inner record ID: {}", saved.getId());
         dashboardService.clearDashboardCache();
         return saved;
     }
@@ -62,11 +68,16 @@ public class CreditNoteServiceImpl implements CreditNoteService {
     @Override
     @CacheEvict(value = "credit_notes", allEntries = true)
     public CreditNote update(String id, CreditNote data) {
+        log.info("Attempting to commit transaction modification delta configurations on Credit Note reference ID: {}", id);
         CreditNote existing = creditNoteRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Credit Note not found: " + id));
+                .orElseThrow(() -> {
+                    log.error("Update payload rejected: target mapping entity matching code ID {} doesn't exist", id);
+                    return new IllegalArgumentException("Credit Note not found: " + id);
+                });
 
         if (data.getCreditNoteNo() != null && !data.getCreditNoteNo().equals(existing.getCreditNoteNo())) {
             if (creditNoteRepository.existsByCreditNoteNo(data.getCreditNoteNo())) {
+                log.warn("Update mutation failed: collision vector triggered for modification code {}", data.getCreditNoteNo());
                 throw new IllegalArgumentException("New Credit Note number already exists");
             }
             existing.setCreditNoteNo(data.getCreditNoteNo());
@@ -99,6 +110,7 @@ public class CreditNoteServiceImpl implements CreditNoteService {
         existing.setUpdatedAt(Instant.now());
 
         CreditNote saved = creditNoteRepository.save(existing);
+        log.info("Credit Note state modifications for target document identity matching ID {} successfully persisted", id);
         dashboardService.clearDashboardCache();
         return saved;
     }
@@ -106,24 +118,37 @@ public class CreditNoteServiceImpl implements CreditNoteService {
     @Override
     @Cacheable(value = "credit_notes", key = "#id")
     public CreditNote getById(String id) {
-        return creditNoteRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("Not found: " + id));
+        log.debug("Executing structured data mapping find lookup query for parameter ID: {}", id);
+        return creditNoteRepository.findById(id).orElseThrow(() -> {
+            log.error("Data lookup request failed: Credit Note record signature ID {} is non-existent", id);
+            return new IllegalArgumentException("Not found: " + id);
+        });
     }
 
     @Override
     @Cacheable(value = "credit_notes")
-    public List<CreditNote> getAll() { return creditNoteRepository.findAll(); }
+    public List<CreditNote> getAll() { 
+        log.debug("Executing collective lookup query for all credit note records");
+        return creditNoteRepository.findAll(); 
+    }
 
     @Override
     @CacheEvict(value = "credit_notes", allEntries = true)
     public void delete(String id) {
+        log.info("Initiating structural row cache eviction sequence for Credit Note token code ID: {}", id);
         creditNoteRepository.deleteById(id);
+        log.info("Credit Note index successfully dropped for row ID: {}", id);
         dashboardService.clearDashboardCache();
     }
 
     @Override
     @Cacheable(value = "credit_notes", key = "'pdf-' + #id")
     public byte[] generatePdf(String id) throws Exception {
-        CreditNote cn = creditNoteRepository.findById(id).orElseThrow();
+        log.info("Initiating structural PDF generation engine context pipeline for Credit Note token ID: {}", id);
+        CreditNote cn = creditNoteRepository.findById(id).orElseThrow(() -> {
+            log.error("PDF engine pipeline aborted: document reference entity mapping code ID {} non-existent", id);
+            return new IllegalArgumentException("Credit Note not found");
+        });
         Client client = clientRepository.findById(cn.getClientId()).orElse(new Client());
         Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
 
@@ -205,6 +230,7 @@ public class CreditNoteServiceImpl implements CreditNoteService {
                 throw new RuntimeException();
             }
         } catch (Exception e) {
+            log.debug("Bypassing brand layout graphic insertion: exception encountered during asset extraction", e);
             Paragraph p = new Paragraph("JMD\nDÉCOR", fontBoldBig);
             p.setAlignment(Element.ALIGN_CENTER);
             logoCell.addElement(p);
@@ -285,7 +311,7 @@ public class CreditNoteServiceImpl implements CreditNoteService {
         if (cn.getItems() != null) {
             for (CreditNote.CreditNoteItem item : cn.getItems()) {
                 double itemAmount = item.getQty() * item.getRate();
-                // 🟢 Dynamically uses the tax percentage value configured on the individual item line context
+                // Dynamically uses the tax percentage value configured on the individual item line context
                 double itemTaxPct = item.getTaxPercent() > 0 ? item.getTaxPercent() : 18.0;
                 double lineCgst = itemAmount * ((itemTaxPct / 2) / 100.0);
                 double lineSgst = itemAmount * ((itemTaxPct / 2) / 100.0);
@@ -408,6 +434,8 @@ public class CreditNoteServiceImpl implements CreditNoteService {
         
         document.add(finalFooter);
         document.close();
+        
+        log.info("PDF generation successfully completed for Credit Note ID: {}", id);
         return out.toByteArray();
     }
 

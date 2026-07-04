@@ -12,6 +12,7 @@ import com.lowagie.text.*;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -20,6 +21,7 @@ import java.net.URL;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
+@Slf4j
 @Service
 public class PdfServiceImpl implements PdfService {
 
@@ -44,17 +46,23 @@ public class PdfServiceImpl implements PdfService {
 
     @Override
     public byte[] generateInvoicePdf(String invoiceId) throws Exception {
+        log.info("Initiating structural PDF generation engine context pipeline for Invoice token ID: {}", invoiceId);
+
         Invoice invoice = invoiceRepository.findById(invoiceId)
-                .orElseThrow(() -> new IllegalArgumentException("Invoice not found"));
+                .orElseThrow(() -> {
+                    log.error("PDF engine pipeline aborted: document reference entity mapping code ID {} non-existent", invoiceId);
+                    return new IllegalArgumentException("Invoice not found");
+                });
 
         Client client = clientRepository.findById(invoice.getClientId())
                 .orElse(new Client()); 
         
         String clientName = client.getName() != null ? client.getName() : "Unknown Client";
-        // 🟢 FIX: Check the invoice snapshot field first; fall back to master client record if empty
+        
+        // Check the invoice snapshot field first; fall back to master client record if empty
         String clientGst = invoice.getClientGst() != null && !invoice.getClientGst().isBlank() 
-        ? invoice.getClientGst() 
-        :(client.getGstin() != null ? client.getGstin() : "");
+            ? invoice.getClientGst() 
+            : (client.getGstin() != null ? client.getGstin() : "");
         String clientState = client.getState() != null ? client.getState() : "-";
         String clientStateCode = client.getStateCode() != null ? client.getStateCode() : "27";
 
@@ -107,6 +115,7 @@ public class PdfServiceImpl implements PdfService {
                 logoCell.addElement(img);
             } else { throw new RuntimeException("No img"); }
         } catch (Exception e) {
+            log.debug("Bypassing brand layout graphic insertion: exception encountered during asset extraction", e);
             Paragraph p = new Paragraph("JMD\nDECOR", FONT_BOLD_BIG);
             p.setAlignment(Element.ALIGN_RIGHT);
             logoCell.addElement(p);
@@ -153,7 +162,6 @@ public class PdfServiceImpl implements PdfService {
         companyCell.addElement(new Paragraph("Email: " + company.getEmail(), FONT_NORMAL));
         companyCell.addElement(new Paragraph("GST: " + company.getGstin(), FONT_BOLD));
         
-        // 👇 ADDED: UDYAM REG NO
         String udyam = company.getUdyamRegNo() != null ? company.getUdyamRegNo() : "-";
         companyCell.addElement(new Paragraph("UDYAM REG NO: " + udyam, FONT_BOLD));
         
@@ -304,6 +312,8 @@ public class PdfServiceImpl implements PdfService {
         document.add(footerTable);
 
         document.close();
+        
+        log.info("PDF generation successfully completed for Invoice ID: {}", invoiceId);
         return out.toByteArray();
     }
 

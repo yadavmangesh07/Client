@@ -51,9 +51,9 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
-    @CacheEvict(value = "clients", allEntries = true) // 🟢 Flushes master list cache entries on change
+    @CacheEvict(value = "clients", allEntries = true) // Flushes master list cache entries on change
     public ClientDTO create(CreateClientRequest req) {
-        log.info("Creating new client with name: {}", req.getName());
+        log.info("Attempting to create Client profile record with name: {}", req.getName());
         Client client = Client.builder()
                 .name(req.getName())
                 .email(req.getEmail())
@@ -69,17 +69,17 @@ public class ClientServiceImpl implements ClientService {
                 .build();
 
         Client saved = clientRepository.save(client);
-        log.info("Client successfully created with ID: {}", saved.getId());
+        log.info("Client tracking token successfully written to collection persistence layer with inner record ID: {}", saved.getId());
         return mapper.toDto(saved);
     }
 
     @Override
-    @CacheEvict(value = "clients", allEntries = true) // 🟢 Evicts old cache data on profile changes
+    @CacheEvict(value = "clients", allEntries = true) // Evicts old cache data on profile changes
     public ClientDTO update(String id, CreateClientRequest req) {
-        log.info("Updating client profile for ID: {}", id);
+        log.info("Attempting to commit transaction modification delta configurations on Client reference ID: {}", id);
         Client client = clientRepository.findById(id)
                 .orElseThrow(() -> {
-                    log.warn("Update failed: Client ID {} not found", id);
+                    log.error("Update payload configuration rejected: target mapping entity matching code ID {} doesn't exist", id);
                     return new IllegalArgumentException("Client not found: " + id);
                 });
         
@@ -95,31 +95,31 @@ public class ClientServiceImpl implements ClientService {
         client.setUpdatedAt(Instant.now());
         
         Client saved = clientRepository.save(client);
-        log.info("Client ID: {} updated successfully", id);
+        log.info("Client state modifications for target profile identity matching ID {} successfully persisted", id);
         return mapper.toDto(saved);
     }
 
     @Override
-    @Cacheable(value = "clients", key = "#id") // 🟢 Caches specific individual single data rows
+    @Cacheable(value = "clients", key = "#id") // Caches specific individual single data rows
     public ClientDTO getById(String id) {
-        log.info("Fetching client data from DB for ID: {}", id);
+        log.debug("Executing structured data mapping find lookup query for instance token key parameter ID: {}", id);
         return clientRepository.findById(id)
                 .map(mapper::toDto)
                 .orElseThrow(() -> {
-                    log.warn("Fetch failed: Client ID {} not found", id);
+                    log.error("Data lookup request failed: Client record signature ID {} is missing or non-existent", id);
                     return new IllegalArgumentException("Client not found: " + id);
                 });
     }
 
     @Override
-    @Cacheable(value = "clients", key = "'profile-' + #clientId") // 🟢 Bypasses heavy multi-repo threads if loaded recently
+    @Cacheable(value = "clients", key = "'profile-' + #clientId") // Bypasses heavy multi-repo threads if loaded recently
     public ClientProfileDTO getClientProfile(String clientId) {
-        log.info("Assembling dynamic profile map from repositories for client: {}", clientId);
+        log.info("Assembling dynamic complex metrics profile aggregation maps for client: {}", clientId);
         long startTime = System.currentTimeMillis();
 
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> {
-                    log.warn("Profile fetch failed: ID {} not found", clientId);
+                    log.error("Profile aggregate assembly aborted: Client context ID {} non-existent", clientId);
                     return new IllegalArgumentException("Client not found: " + clientId);
                 });
 
@@ -132,7 +132,7 @@ public class ClientServiceImpl implements ClientService {
             if (byId != null && !byId.isEmpty()) {
                 return byId;
             }
-            log.info("No WCC found by ID for client {}, falling back to name-based lookup for: {}", clientId, client.getName());
+            log.info("No explicit WCC keys mapped by target ID for client {}; fallback matching execution executed on entity name: {}", clientId, client.getName());
             return wccRepository.findByStoreNameIgnoreCase(client.getName());
         });
 
@@ -170,10 +170,10 @@ public class ClientServiceImpl implements ClientService {
             dto.setStats(stats);
             
             long endTime = System.currentTimeMillis();
-            log.info("Profile assembly for {} took {} ms", client.getName(), (endTime - startTime));
+            log.info("Asynchronous multi-thread profile block compilation for client [{}] finalized in {} ms", client.getName(), (endTime - startTime));
 
         } catch (Exception e) {
-            log.error("Critical error assembling profile for client {}: {}", clientId, e.getMessage());
+            log.error("Critical analytical execution failure compiling sub-repository streams for client reference " + clientId + ": " + e.getMessage(), e);
             throw new RuntimeException("Error assembling client profile", e);
         }
 
@@ -183,23 +183,23 @@ public class ClientServiceImpl implements ClientService {
     @Override
     @Cacheable(value = "clients")
     public List<ClientDTO> getAll() {
-        log.info("Fetching master collection list of clients from database...");
+        log.debug("Executing collective relational dump vector lookup query against Client transactional datasets");
         return clientRepository.findAll().stream()
                 .map(mapper::toDto)
                 .collect(Collectors.toList());
     }
 
     @Override
-    @CacheEvict(value = "clients", allEntries = true) // 🟢 Invalidates cache keys entirely upon deletion
+    @CacheEvict(value = "clients", allEntries = true) // Invalidates cache keys entirely upon deletion
     public void delete(String id) {
-        log.warn("Request received to DELETE client ID: {}", id);
+        log.warn("Initiating structural row cache eviction and physical deletion sequence for Client entity element key ID: {}", id);
         clientRepository.deleteById(id);
-        log.info("Client ID: {} successfully deleted", id);
+        log.info("Client structural row block reference ID: {} successfully purged from system persistence collections", id);
     }
 
     @Override
     public Page<ClientDTO> search(String q, int page, int size, String sort) {
-        log.info("Client search initiated: query='{}', page={}, size={}", q, page, size);
+        log.debug("Client search index initialized with query parameters: string='{}', pageIndex={}, limitSize={}", q, page, size);
         
         if (page < 0) page = 0;
         if (size <= 0) size = 10;
@@ -222,7 +222,7 @@ public class ClientServiceImpl implements ClientService {
         query.with(pageable);
 
         List<Client> list = mongoTemplate.find(query, Client.class);
-        log.info("Search completed. Found {} total matching records", total);
+        log.info("Regex search iteration query completed. Found {} total matching criteria row document records", total);
         
         List<ClientDTO> dtos = list.stream().map(mapper::toDto).collect(Collectors.toList());
         return new PageImpl<>(dtos, pageable, total);
@@ -236,7 +236,7 @@ public class ClientServiceImpl implements ClientService {
             Sort.Direction dir = (parts.length > 1 && parts[1].equalsIgnoreCase("asc")) ? Sort.Direction.ASC : Sort.Direction.DESC;
             return Sort.by(dir, prop);
         } catch (Exception e) {
-            log.debug("Invalid sort parameter '{}', using default", sort);
+            log.debug("Gracefully handling sort evaluation format failure for configuration key string '{}'; reverting data array alignment to default parameters", sort);
             return defaultSort;
         }
     }

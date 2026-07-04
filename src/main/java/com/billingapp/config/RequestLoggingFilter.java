@@ -13,13 +13,18 @@ import java.io.IOException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 
 @Component
 public class RequestLoggingFilter implements Filter {
 
     private static final Logger logger = LoggerFactory.getLogger(RequestLoggingFilter.class);
     
-    // Professional ISO timestamp formatter
+    private static final String CORRELATION_ID_HEADER = "X-Correlation-ID";
+    private static final String MDC_CORRELATION_KEY = "CorrelationId";
+    private static final String MDC_USER_KEY = "user";
+    private static final String MDC_IP_KEY = "ip";
+    
     private static final DateTimeFormatter ISO_FORMATTER = 
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.of("Asia/Kolkata"));
 
@@ -33,28 +38,36 @@ public class RequestLoggingFilter implements Filter {
         String uri = httpRequest.getRequestURI();
         String method = httpRequest.getMethod();
         
-        // Skip logging successful health pings to keep Render log streams clean
         boolean isHealthCheck = uri.equals("/api/public/health");
 
-        // 1. Capture Client Real IP (handles Render/Nginx reverse proxy headers)
+        // 1. Capture Client Real IP
         String clientIp = httpRequest.getHeader("X-Forwarded-For");
         if (clientIp == null || clientIp.isBlank()) {
             clientIp = httpRequest.getRemoteAddr();
         } else {
-            // X-Forwarded-For can contain a chain of IPs, take the first one
             clientIp = clientIp.split(",")[0].trim();
         }
 
-        // 2. Capture authenticated User Context from Spring Security
+        // 2. Capture authenticated User Context
         String username = "ANONYMOUS";
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
             username = auth.getName(); 
         }
 
-        // 3. Inject variables into MDC (Makes them available automatically to your log layout config)
-        MDC.put("user", username);
-        MDC.put("ip", clientIp);
+        // 3. Extract or Generate universal Correlation ID Trace Token
+        String correlationId = httpRequest.getHeader(CORRELATION_ID_HEADER);
+        if (correlationId == null || correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
+
+        // 4. Inject variables into MDC context threads
+        MDC.put(MDC_USER_KEY, username);
+        MDC.put(MDC_IP_KEY, clientIp);
+        MDC.put(MDC_CORRELATION_KEY, correlationId);
+
+        // 5. Attach tracer to outbound header response packet
+        httpResponse.setHeader(CORRELATION_ID_HEADER, correlationId);
 
         long startTime = System.currentTimeMillis();
         String timestamp = ISO_FORMATTER.format(Instant.now());
@@ -78,13 +91,18 @@ public class RequestLoggingFilter implements Filter {
                 logger.info("[{}] <<< RESPONSE  | User: {} | IP: {} | {} {} | Status: {} | Execution: {}ms", 
                         endTimestamp, username, clientIp, method, uri, status, duration);
             } else if (duration > 1500) {
-                // Keep track of slow warm-up pings
                 logger.warn("[{}] <<< SLOW PING | User: {} | IP: {} | {} {} | Status: {} | Execution: {}ms", 
                         endTimestamp, username, clientIp, method, uri, status, duration);
             }
 
-            // 4. Always clear MDC context threads to prevent memory leaks
+            // 6. Clear MDC completely to protect the container thread pool
             MDC.clear();
         }
     }
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {}
+
+    @Override
+    public void destroy() {}
 }

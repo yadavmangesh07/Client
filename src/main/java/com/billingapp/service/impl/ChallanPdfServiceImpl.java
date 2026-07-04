@@ -11,13 +11,15 @@ import com.lowagie.text.Rectangle;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import lombok.extern.slf4j.Slf4j;
+import java.awt.Color;
 import org.springframework.stereotype.Service;
 
-import java.awt.Color;
 import java.io.ByteArrayOutputStream;
 import java.net.URL;
 import java.text.SimpleDateFormat;
 
+@Slf4j
 @Service
 public class ChallanPdfServiceImpl {
 
@@ -35,8 +37,13 @@ public class ChallanPdfServiceImpl {
     }
 
     public byte[] generateChallanPdf(String challanId) throws Exception {
+        log.info("Initiating structural PDF generation engine context pipeline for Challan token ID: {}", challanId);
+
         Challan challan = challanRepository.findById(challanId)
-                .orElseThrow(() -> new IllegalArgumentException("Challan not found"));
+                .orElseThrow(() -> {
+                    log.error("PDF engine pipeline aborted: document reference entity mapping code ID {} non-existent", challanId);
+                    return new IllegalArgumentException("Challan not found");
+                });
 
         Company company = companyRepository.findById("MY_COMPANY").orElse(new Company());
 
@@ -68,7 +75,9 @@ public class ChallanPdfServiceImpl {
                 img.setAlignment(Element.ALIGN_RIGHT);
                 logoCell.addElement(img);
             }
-        } catch (Exception e) {}
+        } catch (Exception e) {
+            log.debug("Bypassing brand layout graphic insertion: exception encountered during asset extraction", e);
+        }
         topTable.addCell(logoCell);
         document.add(topTable);
 
@@ -124,7 +133,7 @@ public class ChallanPdfServiceImpl {
         clientCell.addElement(new Paragraph(challan.getClientName(), FONT_BOLD));
         clientCell.addElement(new Paragraph(challan.getClientAddress(), FONT_NORMAL));
         
-        // 🟢 defensive logic check for snapshot stability
+        // defensive logic check for snapshot stability
         String displayGst = (challan.getClientGst() != null && !challan.getClientGst().isBlank()) 
                 ? challan.getClientGst() 
                 : "-";
@@ -227,6 +236,8 @@ public class ChallanPdfServiceImpl {
 
         document.add(footer);
         document.close();
+        
+        log.info("PDF generation successfully completed for Delivery Challan ID: {}", challanId);
         return out.toByteArray();
     }
 
