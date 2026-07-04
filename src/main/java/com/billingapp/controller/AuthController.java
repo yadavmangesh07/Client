@@ -68,7 +68,7 @@ public class AuthController {
 
     // --- REGISTER ENDPOINT ---
     @PostMapping("/register")
-    public ResponseEntity<?> registerUser(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> registerUser(@RequestBody Map<String, String> body, Principal principal) {
         String username = body.get("username");
         String password = body.get("password");
         // Default to USER if no role is provided
@@ -86,6 +86,13 @@ public class AuthController {
         newUser.setUsername(username);
         newUser.setPassword(passwordEncoder.encode(password));
         newUser.setRole(role);
+        
+        // Track who performed the onboarding action using the authenticated Principal context
+        if (principal != null && principal.getName() != null) {
+            newUser.setCreatedBy(principal.getName());
+        } else {
+            newUser.setCreatedBy("System/Admin");
+        }
 
         userRepository.save(newUser);
 
@@ -103,10 +110,19 @@ public class AuthController {
 
     // --- DELETE USER ---
     @DeleteMapping("/users/{id}")
-    public ResponseEntity<?> deleteUser(@PathVariable String id) {
-        if (!userRepository.existsById(id)) {
+    public ResponseEntity<?> deleteUser(@PathVariable String id, Principal principal) {
+        User targetUser = userRepository.findById(id).orElse(null);
+        if (targetUser == null) {
             return ResponseEntity.notFound().build();
         }
+
+        // Defensive guard clause preventing self-destructive identity deletion requests
+        if (principal != null && targetUser.getUsername().equalsIgnoreCase(principal.getName())) {
+            return ResponseEntity.badRequest().body(
+                Collections.singletonMap("message", "Self-deletion prohibited! You cannot remove your active session identity from the directory.")
+            );
+        }
+
         userRepository.deleteById(id);
         return ResponseEntity.ok(Collections.singletonMap("message", "User deleted successfully"));
     }
@@ -167,16 +183,13 @@ public class AuthController {
         }
     }
 
-    // 👇 FIXED: DTO Class MUST be static and public for JSON parsing
     public static class UpdateProfileRequest {
         private String username;
         private String currentPassword;
         private String newPassword;
 
-        // Default Constructor
         public UpdateProfileRequest() {}
 
-        // Getters and Setters
         public String getUsername() {
             return username;
         }

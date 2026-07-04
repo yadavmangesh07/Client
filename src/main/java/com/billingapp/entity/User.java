@@ -12,6 +12,7 @@ public class User {
     private String username;
     private String password; // Stores the hashed password
     private String role;     // e.g., "ADMIN"
+    private String createdBy;
 
     // Constructors
     public User() {}
@@ -34,4 +35,11 @@ public class User {
 
     public String getRole() { return role; }
     public void setRole(String role) { this.role = role; }
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
 }
