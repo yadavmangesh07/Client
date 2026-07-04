@@ -6,6 +6,7 @@ import com.billingapp.dto.InvoiceItemRequest;
 import com.billingapp.entity.Invoice;
 import com.billingapp.mapper.InvoiceMapper;
 import com.billingapp.repository.InvoiceRepository;
+import com.billingapp.service.DashboardService; // 👈 Added import
 import com.billingapp.service.InvoiceService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
@@ -31,11 +32,17 @@ public class InvoiceServiceImpl implements InvoiceService {
     private final InvoiceRepository invoiceRepository;
     private final InvoiceMapper mapper;
     private final MongoTemplate mongoTemplate;
+    private final DashboardService dashboardService; // 👈 Added Dashboard Service dependency
 
-    public InvoiceServiceImpl(InvoiceRepository invoiceRepository, InvoiceMapper mapper, MongoTemplate mongoTemplate) {
+    // 👈 Updated Constructor to inject DashboardService
+    public InvoiceServiceImpl(InvoiceRepository invoiceRepository, 
+                              InvoiceMapper mapper, 
+                              MongoTemplate mongoTemplate,
+                              DashboardService dashboardService) {
         this.invoiceRepository = invoiceRepository;
         this.mapper = mapper;
         this.mongoTemplate = mongoTemplate;
+        this.dashboardService = dashboardService;
     }
 
     @Override
@@ -71,6 +78,8 @@ public class InvoiceServiceImpl implements InvoiceService {
 
         Invoice saved = invoiceRepository.save(invoice);
         log.info("Invoice tracking token successfully written to collection persistence storage layer with inner record ID: {}", saved.getId());
+        
+        dashboardService.clearDashboardCache(); // 👈 Flush metric frames instantly on additions
         return mapper.toDto(saved);
     }
 
@@ -145,6 +154,8 @@ public class InvoiceServiceImpl implements InvoiceService {
         existing.setUpdatedAt(Instant.now());
         Invoice saved = invoiceRepository.save(existing);
         log.info("Invoice state modifications for target document identity matching ID {} successfully persisted", id);
+        
+        dashboardService.clearDashboardCache(); // 👈 Flush metrics frames on updates (e.g. status variations)
         return mapper.toDto(saved);
     }
 
@@ -158,6 +169,8 @@ public class InvoiceServiceImpl implements InvoiceService {
         }
         invoiceRepository.deleteById(id);
         log.info("Entity index successfully dropped for row ID: {}", id);
+        
+        dashboardService.clearDashboardCache(); // 👈 Flush metrics frames instantly on deletions
     }
 
     @Override
